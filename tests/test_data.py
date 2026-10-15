@@ -706,3 +706,56 @@ def test_build_annual_hourly_dataset_duplicate_trips(
 
     # No deben producirse datasets procesados.
     assert not list(processed_dir.glob("*.parquet"))
+
+
+def test_run_pipeline_executes_all_stages_in_order(
+    monkeypatch, tmp_path
+):
+    """Verificar el orden del pipeline sin procesar datos reales."""
+    from mibici import dataset
+
+    executed_stages = []
+    manifest_path = tmp_path / "manifest.csv"
+    observed_path = tmp_path / "observed.parquet"
+    completed_path = tmp_path / "completed.parquet"
+
+    # Simular la descarga anual.
+    def fake_download_year(path):
+        assert path == manifest_path
+        executed_stages.append("download")
+        return pd.DataFrame({"month": range(1, 13)})
+
+    # Simular la preparación de los doce meses.
+    def fake_prepare_year(year):
+        assert year == 2025
+        executed_stages.append("prepare")
+        return [
+            tmp_path / f"trips_2025_{month:02d}.parquet"
+            for month in range(1, 13)
+        ]
+
+    # Simular la generación de los datasets horarios.
+    def fake_build_hourly(year):
+        assert year == 2025
+        executed_stages.append("build")
+        return observed_path, completed_path
+
+    monkeypatch.setattr(
+        dataset, "download_year", fake_download_year
+    )
+    monkeypatch.setattr(
+        dataset, "prepare_year", fake_prepare_year
+    )
+    monkeypatch.setattr(
+        dataset,
+        "build_annual_hourly_dataset",
+        fake_build_hourly,
+    )
+
+    result = dataset.run_pipeline(
+        year=2025,
+        manifest_path=manifest_path,
+    )
+
+    assert executed_stages == ["download", "prepare", "build"]
+    assert result == (observed_path, completed_path)

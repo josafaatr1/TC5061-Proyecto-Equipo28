@@ -188,9 +188,6 @@ def save_interim_trips(
 
     logger.success(f"Dataset intermedio guardado en: {output_path}")
 
-@app.command()
-
-
 def download_file(
     url: str,
     output_path: Path,
@@ -661,6 +658,123 @@ def download_year(
         )
 
     return pd.DataFrame(results)
+
+
+def prepare_year(year: int = 2025) -> list[Path]:
+    """Preparar los doce archivos mensuales de viajes de MiBici."""
+    output_paths = []
+
+    for month in range(1, 13):
+        input_path = (
+            RAW_DATA_DIR / f"datos_abiertos_{year}_{month:02d}.csv"
+        )
+        output_path = (
+            INTERIM_DATA_DIR / f"trips_{year}_{month:02d}.parquet"
+        )
+
+        # Verificar la existencia del archivo original.
+        if not input_path.is_file():
+            raise FileNotFoundError(
+                f"No existe el archivo mensual: {input_path}"
+            )
+
+        logger.info(f"Preparando viajes de {year}-{month:02d}")
+
+        # Leer, estandarizar y guardar los datos del mes.
+        trips = load_trips(input_path)
+        prepared = prepare_trips(trips)
+        save_interim_trips(prepared, output_path)
+
+        output_paths.append(output_path)
+
+        logger.info(
+            f"Mes {month:02d}: {len(prepared):,} viajes procesados."
+        )
+
+    logger.success(
+        f"Preparación anual completada: {len(output_paths)} meses."
+    )
+
+    return output_paths
+
+def run_pipeline(
+    year: int = 2025,
+    manifest_path: Path = PROJ_ROOT / "references/mibici_sources_2025.csv",
+) -> tuple[Path, Path]:
+    """Ejecutar la descarga, preparación y agregación anual."""
+    if year != 2025:
+        raise ValueError(
+            "El manifiesto disponible corresponde únicamente a 2025."
+        )
+
+    logger.info(f"Iniciando pipeline anual de MiBici {year}.")
+
+    # Descargar o reutilizar los archivos originales.
+    inventory = download_year(manifest_path)
+
+    logger.info(
+        f"Archivos originales disponibles: {len(inventory)}"
+    )
+
+    # Estandarizar los doce archivos mensuales.
+    prepared_paths = prepare_year(year)
+
+    logger.info(
+        f"Archivos intermedios generados: {len(prepared_paths)}"
+    )
+
+    # Construir los datasets horarios anuales.
+    observed_path, completed_path = (
+        build_annual_hourly_dataset(year)
+    )
+
+    logger.success("Pipeline anual completado correctamente.")
+    logger.info(f"Dataset observado: {observed_path}")
+    logger.info(f"Dataset completo: {completed_path}")
+
+    return observed_path, completed_path
+
+@app.command("download-year")
+def download_year_command(
+    manifest_path: Path = PROJ_ROOT / "references/mibici_sources_2025.csv",
+):
+    """Descargar los archivos mensuales de MiBici 2025."""
+    inventory = download_year(manifest_path)
+
+    logger.success(
+        f"Descarga anual completada: {len(inventory)} archivos."
+    )
+
+
+@app.command("build-hourly")
+def build_hourly_command(
+    year: int = 2025,
+):
+    """Generar los datasets horarios observados y completados."""
+    observed_path, completed_path = build_annual_hourly_dataset(year)
+
+    logger.success(f"Dataset observado: {observed_path}")
+    logger.success(f"Dataset completo: {completed_path}")
+
+@app.command("prepare-year")
+def prepare_year_command(year: int = 2025):
+    """Estandarizar los CSV mensuales y generar archivos Parquet."""
+    output_paths = prepare_year(year)
+
+    logger.success(
+        f"Archivos intermedios generados: {len(output_paths)}"
+    )
+
+
+@app.command("run-pipeline")
+def run_pipeline_command(
+    year: int = 2025,
+    manifest_path: Path = (
+        PROJ_ROOT / "references/mibici_sources_2025.csv"
+    ),
+):
+    """Ejecutar el pipeline completo de MiBici 2025."""
+    run_pipeline(year, manifest_path)
 
 if __name__ == "__main__":
     app()
