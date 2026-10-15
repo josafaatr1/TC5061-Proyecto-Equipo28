@@ -23,16 +23,48 @@ El proyecto implementará buenas prácticas de MLOps, incluyendo versionado de c
 
 Para P2 se desarrollará una aproximación del riesgo utilizando los registros de viajes y la capacidad de las estaciones, debido a que los datos abiertos no incluyen inventarios históricos de bicicletas.
 
+
 ## 3. Fuentes de datos
 
-Se utilizarán los datos abiertos publicados por MiBici:
+Los datos provienen del portal oficial de [Datos abiertos de MiBici](https://www.mibici.net/es/datos-abiertos/).
 
-- Registros mensuales de viajes en formato CSV.
-- Nomenclatura de estaciones, incluyendo identificadores, ubicación geográfica y capacidad.
+### 3.1. Registros históricos de viajes
 
-Los archivos se descargarán mediante un proceso automatizado y se almacenarán localmente. Los datos originales y procesados no se incluirán en el repositorio Git.
+Se utilizan los doce archivos CSV correspondientes a enero–diciembre de 2025.
 
-El rango de fechas definitivo y las condiciones de uso se documentarán una vez que el equipo complete la selección y revisión de los datos.
+| Característica | Valor |
+|---|---|
+| Periodo | Enero–diciembre de 2025 |
+| Archivos originales | 12 CSV |
+| Viajes registrados | 4,532,032 |
+| Estaciones observadas | 371 |
+| Tamaño total aproximado | 393 MB |
+| Codificaciones | UTF-8 y Windows-1252 |
+
+Los archivos de referencia son:
+
+- `references/mibici_sources_2025.csv`: manifiesto con las URLs oficiales.
+- `references/mibici_inventory_2025.csv`: inventario de archivos, tamaños y huellas SHA-256.
+
+### 3.2. Catálogo de estaciones
+
+Se utiliza el archivo `nomenclatura_2026_09.csv`, correspondiente a septiembre de 2026, con 484 estaciones.
+
+Este catálogo es posterior al periodo analizado. Por tanto, no se asume que todas sus estaciones o capacidades estuvieran vigentes durante 2025.
+
+### 3.3. Privacidad y almacenamiento
+
+Durante la estandarización se excluyen los campos `Usuario_Id`, `Genero` y `Año_de_nacimiento`.
+
+Los archivos originales, intermedios y procesados se almacenan localmente y no se incluyen en Git.
+
+### 3.4. Limitaciones de los datos
+
+Los registros de viajes no contienen inventarios históricos de bicicletas ni disponibilidad real de anclajes.
+
+Por ello, el problema P2 utilizará indicadores proxy basados en los flujos de salidas y llegadas, sin afirmar que representan estados reales de estaciones vacías o llenas.
+
+Asimismo, las horas sin viajes no garantizan que una estación estuviera operativa.
 
 ## 4. Estructura del repositorio
 
@@ -101,15 +133,67 @@ Verificar la instalación:
 python -m pip check
 ```
 
-## 7. Ingesta y experimentación
 
-La ingesta reproducible se implementará en `mibici/dataset.py` y las transformaciones reutilizables en `mibici/features.py`.
+## 7. Pipeline reproducible de ingeniería de datos
 
-Los experimentos base de P1, P2 y P3 se registrarán en MLflow bajo el nombre:
+El módulo `mibici/dataset.py` implementa la descarga, validación, preparación y agregación de los datos de MiBici 2025.
 
-`mibici-equipo28`
+### 7.1. Descargar los archivos originales
 
-Los comandos definitivos de ingesta y ejecución se incorporarán cuando los scripts estén implementados y validados.
+```bash
+python -m mibici.dataset download-year
+```
+
+Descarga los doce CSV definidos en `references/mibici_sources_2025.csv`. Los archivos existentes se reutilizan sin volver a descargarlos.
+
+### 7.2. Preparar los datos mensuales
+
+```bash
+python -m mibici.dataset prepare-year
+```
+
+Lee y valida los CSV, reconoce sus codificaciones y genera doce archivos Parquet estandarizados en `data/interim/`.
+
+Se calculan indicadores de calidad para fechas inválidas, duraciones no positivas y viajes superiores a una hora.
+
+### 7.3. Construir los datasets horarios
+
+```bash
+python -m mibici.dataset build-hourly
+```
+
+Integra los doce meses, valida los identificadores de viaje y agrega las salidas y llegadas por estación y hora.
+
+Genera:
+
+- `data/processed/station_hourly_2025.parquet`: 1,887,819 registros estación-hora con actividad observada.
+- `data/processed/station_hourly_2025_complete.parquet`: 3,212,541 registros estación-hora dentro de 2025, incluyendo horas completadas con cero viajes.
+
+Las horas completadas no garantizan que la estación estuviera operativa.
+
+El dataset observado también incluye llegadas de viajes que finalizaron en enero de 2026, mientras que el dataset completado se restringe al calendario 2025.
+
+### 7.4. Ejecutar el pipeline completo
+
+```bash
+python -m mibici.dataset run-pipeline
+```
+
+Ejecuta las tres etapas anteriores en orden. Requiere conexión a Internet para descargar los archivos que aún no estén disponibles localmente.
+
+### 7.5. Ejecutar pruebas automatizadas
+
+```bash
+python -m pytest tests/test_data.py -v
+```
+
+La implementación cuenta con 24 pruebas aprobadas, que verifican la lectura, validación, transformación, agregación y orquestación del pipeline.
+
+### 7.6. Experimentación
+
+Los modelos de regresión, clasificación y clustering se desarrollan de forma independiente por los integrantes del equipo.
+
+Se utilizará MLflow para registrar los experimentos bajo el nombre previsto `mibici-equipo28`.
 
 ## 8. Flujo de colaboración
 
@@ -136,14 +220,15 @@ Ejemplo de commit:
 chore: initialize MiBici project structure
 ```
 
+
 ## 9. Integrantes y responsabilidades
 
 | Integrante | Responsabilidad |
 |---|---|
-| Iván Fernando García Nuñez | Pendiente de asignación |
-| Anthony Gerardo Gutarra Sánchez | Pendiente de asignación |
-| Miguel Ángel Lara López | Pendiente de asignación |
-| Josafat Misael Rodríguez Nieto | Pendiente de asignación |
+| Iván Fernando García Nuñez | MLOps, seguimiento de experimentos con MLflow e integración del proyecto. |
+| Anthony Gerardo Gutarra Sánchez | Modelos de regresión (P1) y clasificación (P2). |
+| Miguel Ángel Lara López | Análisis exploratorio y clustering de estaciones (P3). |
+| Josafat Misael Rodríguez Nieto | Ingeniería de datos, ingesta, validación, procesamiento y arquitectura de datos. |
 
 ## 10. Documentación
 
@@ -151,8 +236,17 @@ Los documentos de formulación del problema y diseño de arquitectura se almacen
 
 La documentación se ampliará conforme avance el desarrollo del proyecto integrador.
 
+
 ## 11. Estado del proyecto
 
-**Fase actual:** Inicialización de la estructura reproducible.
+**Ingeniería de datos:** Implementada y validada mediante 24 pruebas automatizadas.
 
-**Pendiente:** Selección definitiva de datos, ML Canvas, arquitectura, ingesta automatizada, feature engineering y experimentos base de MLflow.
+**Datos disponibles:** Doce archivos mensuales de 2025, con 4,532,032 viajes y 371 estaciones observadas.
+
+**Pipeline reproducible:** Implementado mediante cuatro comandos CLI para descarga, preparación, agregación y ejecución integral.
+
+**Modelado:** Los modelos de regresión, clasificación y clustering se encuentran en desarrollo por los integrantes responsables.
+
+**MLOps:** Integración de experimentos y seguimiento mediante MLflow en desarrollo.
+
+**Documentación:** Fuentes de datos y pipeline documentados. Pendiente integrar la arquitectura, los resultados de modelado y la evaluación final.
