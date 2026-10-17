@@ -134,11 +134,63 @@ python -m pip check
 ```
 
 
-## 7. Pipeline reproducible de ingeniería de datos
+## 7. Ejecución con MLflow Projects
+
+El archivo `MLproject` define los entry points que MLflow puede ejecutar y `python_env.yaml` fija las versiones de Python y librerías.
+
+### 7.1. Preparar la terminal
+
+En cada terminal nueva, activa el ambiente de la sección 6 y elige el experimento:
+
+```bash
+source .venv/bin/activate
+export MLFLOW_EXPERIMENT_NAME=mibici-equipo28   # si no, los runs caen en "Default"
+```
+
+### 7.2. Correr el proyecto
+
+```bash
+mlflow run . -e load --env-manager local
+```
+
+MLflow lee el archivo `MLproject`, toma el entry point `load` y ejecuta
+`python -m mibici.dataset --trips_path ... --stations_path ... --output_path ...` con los valores por defecto.
+La opción `--env-manager local` usa el ambiente activado en lugar de crear uno nuevo.
+Al final debe decir `=== Run (ID '...') succeeded ===`.
+
+Para usar otros archivos, cambia los parámetros con `-P`:
+
+```bash
+mlflow run . -e load \
+  -P trips_path=data/raw/datos_abiertos_2025_02.csv \
+  -P output_path=data/raw/trips_2025_02.parquet \
+  --env-manager local
+```
+
+| Parámetro | Valor por defecto | Descripción |
+|---|---|---|
+| `trips_path` | `data/raw/datos_abiertos_2025_01.csv` | CSV mensual de viajes |
+| `stations_path` | `data/raw/nomenclatura_2026_09.csv` | Catálogo de estaciones |
+| `output_path` | `data/raw/trips_2025_01.parquet` | Archivo Parquet de salida |
+
+### 7.3. Ver los resultados
+
+```bash
+mlflow ui
+```
+
+Abre http://127.0.0.1:5000 y selecciona el experimento `mibici-equipo28` para revisar los runs, sus parámetros y artefactos.
+
+No hace falta tener la UI abierta mientras corres los runs: puedes abrirla después.
+
+`mlflow.db` y `mlruns/` se crean solos al correr y están excluidos de Git.
+
+
+## 8. Pipeline reproducible de ingeniería de datos
 
 El módulo `mibici/dataset.py` implementa la descarga, validación, preparación y agregación de los datos de MiBici 2025.
 
-### 7.1. Descargar los archivos originales
+### 8.1. Descargar los archivos originales
 
 ```bash
 python -m mibici.dataset download-year
@@ -146,7 +198,7 @@ python -m mibici.dataset download-year
 
 Descarga los doce CSV definidos en `references/mibici_sources_2025.csv`. Los archivos existentes se reutilizan sin volver a descargarlos.
 
-### 7.2. Preparar los datos mensuales
+### 8.2. Preparar los datos mensuales
 
 ```bash
 python -m mibici.dataset prepare-year
@@ -156,7 +208,7 @@ Lee y valida los CSV, reconoce sus codificaciones y genera doce archivos Parquet
 
 Se calculan indicadores de calidad para fechas inválidas, duraciones no positivas y viajes superiores a una hora.
 
-### 7.3. Construir los datasets horarios
+### 8.3. Construir los datasets horarios
 
 ```bash
 python -m mibici.dataset build-hourly
@@ -173,7 +225,7 @@ Las horas completadas no garantizan que la estación estuviera operativa.
 
 El dataset observado también incluye llegadas de viajes que finalizaron en enero de 2026, mientras que el dataset completado se restringe al calendario 2025.
 
-### 7.4. Ejecutar el pipeline completo
+### 8.4. Ejecutar el pipeline completo
 
 ```bash
 python -m mibici.dataset run-pipeline
@@ -181,7 +233,7 @@ python -m mibici.dataset run-pipeline
 
 Ejecuta las tres etapas anteriores en orden. Requiere conexión a Internet para descargar los archivos que aún no estén disponibles localmente.
 
-### 7.5. Ejecutar pruebas automatizadas
+### 8.5. Ejecutar pruebas automatizadas
 
 ```bash
 python -m pytest tests/test_data.py -v
@@ -189,13 +241,13 @@ python -m pytest tests/test_data.py -v
 
 La implementación cuenta con 24 pruebas aprobadas, que verifican la lectura, validación, transformación, agregación y orquestación del pipeline.
 
-### 7.6. Experimentación
+### 8.6. Experimentación
 
 Los modelos de regresión, clasificación y clustering se desarrollan de forma independiente por los integrantes del equipo.
 
 Se utilizará MLflow para registrar los experimentos bajo el nombre previsto `mibici-equipo28`.
 
-## 8. Flujo de colaboración
+## 9. Flujo de colaboración
 
 El equipo utilizará GitHub Flow.
 
@@ -221,7 +273,7 @@ chore: initialize MiBici project structure
 ```
 
 
-## 9. Integrantes y responsabilidades
+## 10. Integrantes y responsabilidades
 
 | Integrante | Responsabilidad |
 |---|---|
@@ -230,14 +282,14 @@ chore: initialize MiBici project structure
 | Miguel Ángel Lara López | Análisis exploratorio y clustering de estaciones (P3). |
 | Josafat Misael Rodríguez Nieto | Ingeniería de datos, ingesta, validación, procesamiento y arquitectura de datos. |
 
-## 10. Documentación
+## 11. Documentación
 
 Los documentos de formulación del problema y diseño de arquitectura se almacenarán en `references/`.
 
 La documentación se ampliará conforme avance el desarrollo del proyecto integrador.
 
 
-## 11. Estado del proyecto
+## 12. Estado del proyecto
 
 **Ingeniería de datos:** Implementada y validada mediante 24 pruebas automatizadas.
 

@@ -5,6 +5,7 @@
 PROJECT_NAME = TC5061-Proyecto-Equipo28
 PYTHON_VERSION = 3.14
 PYTHON_INTERPRETER = python
+export MLFLOW_EXPERIMENT_NAME ?= mibici-equipo28
 
 #################################################################################
 # COMMANDS                                                                      #
@@ -65,6 +66,12 @@ create_environment:
 .PHONY: data
 data: requirements
 	$(PYTHON_INTERPRETER) mibici/dataset.py
+
+
+## Run the load entry point with MLflow
+.PHONY: mlflow-load
+mlflow-load:
+	mlflow run . -e load --env-manager local
 
 
 #################################################################################
