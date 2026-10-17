@@ -5,6 +5,7 @@
 PROJECT_NAME = TC5061-Proyecto-Equipo28
 PYTHON_VERSION = 3.14
 PYTHON_INTERPRETER = python
+export MLFLOW_EXPERIMENT_NAME ?= mibici-equipo28
 
 #################################################################################
 # COMMANDS                                                                      #
@@ -60,11 +61,35 @@ create_environment:
 # PROJECT RULES                                                                 #
 #################################################################################
 
+## Run the load entry point with MLflow
+.PHONY: mlflow-load
+mlflow-load:
+	mlflow run . -e load --env-manager local
 
-## Make dataset
-.PHONY: data
-data: requirements
-	$(PYTHON_INTERPRETER) mibici/dataset.py
+
+## Run the full workflow with MLflow
+.PHONY: mlflow-workflow
+mlflow-workflow:
+	mlflow run . -e workflow --env-manager local
+
+
+# Pendiente: descomentar junto con su entry point en MLproject.
+# Se usa "#" simple para que `make help` no los liste.
+
+# # Run the features entry point with MLflow
+# .PHONY: mlflow-features
+# mlflow-features:
+# 	mlflow run . -e features -P run_id=$(RUN_ID) --env-manager local
+
+# # Run the train entry point with MLflow
+# .PHONY: mlflow-train
+# mlflow-train:
+# 	mlflow run . -e train -P run_id=$(RUN_ID) --env-manager local
+
+# # Run the predict entry point with MLflow
+# .PHONY: mlflow-predict
+# mlflow-predict:
+# 	mlflow run . -e predict -P model_uri=$(MODEL_URI) --env-manager local
 
 
 #################################################################################
