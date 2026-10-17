@@ -31,9 +31,6 @@ RANDOM_SEED = 42
 START_DATE = "2025-01-01"
 END_DATE = "2025-12-31"
 
-# Configuración de MLflow
-MLFLOW_EXPERIMENT_NAME = "mibici-equipo28"
-
 # Directorios adicionales del proyecto
 REFERENCES_DIR = PROJ_ROOT / "references"
 NOTEBOOKS_DIR = PROJ_ROOT / "notebooks"

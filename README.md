@@ -154,26 +154,24 @@ mlflow run . -e load --env-manager local
 ```
 
 MLflow lee el archivo `MLproject`, toma el entry point `load` y ejecuta
-`python -m mibici.dataset --trips_path ... --stations_path ... --output_path ...` con los valores por defecto.
+`python -m mibici.dataset run-pipeline`, es decir, el pipeline completo de la sección 8.4.
 La opción `--env-manager local` usa el ambiente activado en lugar de crear uno nuevo.
 Al final debe decir `=== Run (ID '...') succeeded ===`.
 
-Para usar otros archivos, cambia los parámetros con `-P`:
+Requiere conexión a Internet para descargar los archivos que aún no estén disponibles localmente.
 
-```bash
-mlflow run . -e load \
-  -P trips_path=data/raw/datos_abiertos_2025_02.csv \
-  -P output_path=data/raw/trips_2025_02.parquet \
-  --env-manager local
-```
+### 7.3. Entry points disponibles
 
-| Parámetro | Valor por defecto | Descripción |
-|---|---|---|
-| `trips_path` | `data/raw/datos_abiertos_2025_01.csv` | CSV mensual de viajes |
-| `stations_path` | `data/raw/nomenclatura_2026_09.csv` | Catálogo de estaciones |
-| `output_path` | `data/raw/trips_2025_01.parquet` | Archivo Parquet de salida |
+| Entry point | Comando | Con `make` | Qué hace |
+|---|---|---|---|
+| `load` | `mlflow run . -e load --env-manager local` | `make mlflow-load` | Ejecuta el pipeline de datos (descarga, preparación y datasets horarios) |
+| `workflow` | `mlflow run . -e workflow --env-manager local` | `make mlflow-workflow` | Encadena los pasos del proyecto como runs hijos de un run padre |
 
-### 7.3. Ver los resultados
+Por ahora `workflow` solo contiene el paso `load`; los pasos de modelado se agregarán en `mibici/workflow.py` conforme se implementen.
+
+Los comandos de `make` ya definen `MLFLOW_EXPERIMENT_NAME=mibici-equipo28`, por lo que no hace falta el `export` de la sección 7.1.
+
+### 7.4. Ver los resultados
 
 ```bash
 mlflow ui
@@ -183,7 +181,18 @@ Abre http://127.0.0.1:5000 y selecciona el experimento `mibici-equipo28` para re
 
 No hace falta tener la UI abierta mientras corres los runs: puedes abrirla después.
 
-`mlflow.db` y `mlruns/` se crean solos al correr y están excluidos de Git.
+El paso `load` registra en su run:
+
+| Tipo | Qué se registra |
+|---|---|
+| Parámetros | `year` y el nombre del manifiesto de fuentes |
+| Tag `data_version` | Huella SHA-256 de los doce CSV originales; cambia solo si cambian los datos de entrada |
+| Métricas | Viajes totales y por mes (`trips_month`), indicadores de calidad (`*_count`, `*_pct`), filas de los datasets horarios, estaciones observadas, porcentaje de horas sin actividad y duración del pipeline |
+| Artefactos | `reports/raw_inventory.csv`, `reports/quality_by_month.csv` y los dos datasets horarios en `processed/` |
+
+Los pasos de modelado podrán descargar los datasets horarios con el `run_id` del paso `load`.
+
+`mlflow.db`, `mlruns/` y `mlartifacts/` se crean solos al correr y están excluidos de Git.
 
 
 ## 8. Pipeline reproducible de ingeniería de datos
