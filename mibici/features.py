@@ -31,9 +31,7 @@ def _validate_hourly_data(hourly_data: pd.DataFrame) -> None:
 
     missing_columns = set(REQUIRED_COLUMNS) - set(hourly_data.columns)
     if missing_columns:
-        raise ValueError(
-            f"Faltan columnas obligatorias: {sorted(missing_columns)}"
-        )
+        raise ValueError(f"Faltan columnas obligatorias: {sorted(missing_columns)}")
 
     if not pd.api.types.is_datetime64_any_dtype(hourly_data["hour"]):
         raise TypeError("'hour' debe tener tipo datetime.")
@@ -49,9 +47,8 @@ def _validate_hourly_data(hourly_data: pd.DataFrame) -> None:
 
     numeric_columns = (*FLOW_COLUMNS, "total_activity")
     for column in numeric_columns:
-        if (
-            not pd.api.types.is_numeric_dtype(hourly_data[column])
-            or pd.api.types.is_bool_dtype(hourly_data[column])
+        if not pd.api.types.is_numeric_dtype(hourly_data[column]) or pd.api.types.is_bool_dtype(
+            hourly_data[column]
         ):
             raise TypeError(f"'{column}' debe ser una columna numérica.")
 
@@ -64,13 +61,8 @@ def _validate_hourly_data(hourly_data: pd.DataFrame) -> None:
         ~hourly_data["is_observed_hour"],
         [*FLOW_COLUMNS, "total_activity"],
     ]
-    if (
-        unobserved_counts.isna().any().any()
-        or not unobserved_counts.eq(0).all().all()
-    ):
-        raise ValueError(
-            "Las horas no observadas deben tener conteos completados en cero."
-        )
+    if unobserved_counts.isna().any().any() or not unobserved_counts.eq(0).all().all():
+        raise ValueError("Las horas no observadas deben tener conteos completados en cero.")
 
 
 def _historical_values(
@@ -79,9 +71,7 @@ def _historical_values(
     lag_hours: int,
 ) -> pd.Series:
     """Obtener el valor de la hora exacta anterior, sin imputar brechas."""
-    source_index = pd.MultiIndex.from_frame(
-        ordered_data[["station_id", "hour"]]
-    )
+    source_index = pd.MultiIndex.from_frame(ordered_data[["station_id", "hour"]])
     target_index = pd.MultiIndex.from_arrays(
         [
             ordered_data["station_id"],
@@ -117,9 +107,7 @@ def _historical_departures_mean(
         .mean()
     )
 
-    target_index = pd.MultiIndex.from_frame(
-        ordered_data[["station_id", "hour"]]
-    )
+    target_index = pd.MultiIndex.from_frame(ordered_data[["station_id", "hour"]])
 
     return rolling_mean.reindex(target_index).reset_index(drop=True)
 
@@ -164,8 +152,8 @@ def build_features(hourly_data: pd.DataFrame) -> pd.DataFrame:
             )
 
     for window_hours in ROLLING_WINDOWS:
-        features[f"departures_rolling_mean_{window_hours}h"] = (
-            _historical_departures_mean(ordered_data, window_hours)
+        features[f"departures_rolling_mean_{window_hours}h"] = _historical_departures_mean(
+            ordered_data, window_hours
         )
 
     return features
@@ -173,9 +161,7 @@ def build_features(hourly_data: pd.DataFrame) -> pd.DataFrame:
 
 @app.command()
 def main(
-    input_path: Path = (
-        PROCESSED_DATA_DIR / "station_hourly_2025_complete.parquet"
-    ),
+    input_path: Path = (PROCESSED_DATA_DIR / "station_hourly_2025_complete.parquet"),
     output_path: Path = PROCESSED_DATA_DIR / "features_p1_2025.parquet",
 ) -> None:
     """Leer el dataset horario y guardar las características de P1."""
