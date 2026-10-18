@@ -1,13 +1,17 @@
 import numpy as np
 import pandas as pd
 import pytest
+from typer.testing import CliRunner
 
+from mibici.modeling import train as train_module
 from mibici.modeling.train import (
     TARGET_COLUMN,
     evaluate_baselines,
+    evaluate_candidate,
     prepare_supervised_data,
-    run_baselines,
+    run_model_comparison,
     split_chronologically,
+    train_candidate_model,
     train_dummy_regressor,
 )
 
@@ -205,7 +209,7 @@ def test_evaluate_baselines_reports_metrics_and_missing_seasonal_rows():
         ),
     }
 
-    metrics = evaluate_baselines(splits)
+    metrics = evaluate_baselines(splits, evaluate_test=True)
     validation_metrics = metrics.loc[metrics["evaluation_set"] == "validation"].set_index("model")
 
     assert set(metrics["evaluation_set"]) == {
@@ -238,14 +242,20 @@ def test_validation_and_test_targets_do_not_change_fitted_dummy():
     changed_splits["validation"][TARGET_COLUMN] += 1000
     changed_metrics = evaluate_baselines(changed_splits)
 
-    pd.testing.assert_frame_equal(original_metrics, repeated_metrics)
+    pd.testing.assert_frame_equal(
+        original_metrics.drop(columns=["fit_seconds", "evaluation_seconds"]),
+        repeated_metrics.drop(columns=["fit_seconds", "evaluation_seconds"]),
+    )
     original_train = original_metrics.loc[
         original_metrics["evaluation_set"] == "train"
     ].reset_index(drop=True)
     changed_train = changed_metrics.loc[changed_metrics["evaluation_set"] == "train"].reset_index(
         drop=True
     )
-    pd.testing.assert_frame_equal(original_train, changed_train)
+    pd.testing.assert_frame_equal(
+        original_train.drop(columns=["fit_seconds", "evaluation_seconds"]),
+        changed_train.drop(columns=["fit_seconds", "evaluation_seconds"]),
+    )
     assert not np.isclose(
         original_metrics.loc[
             original_metrics["evaluation_set"] == "validation",
@@ -256,6 +266,100 @@ def test_validation_and_test_targets_do_not_change_fitted_dummy():
             "mae",
         ].to_numpy(),
     ).all()
+
+
+def test_default_baseline_evaluation_does_not_include_test_metrics():
+    """La evaluación predeterminada devuelve solo entrenamiento y validación."""
+    splits = {
+        "train": make_evaluation_split([10, 20], [8, 18]),
+        "validation": make_evaluation_split([30, 40], [28, 38]),
+        "test": make_evaluation_split([50, 60], [48, 58]),
+    }
+
+    metrics = evaluate_baselines(splits)
+
+    assert set(metrics["evaluation_set"]) == {"train", "validation"}
+
+
+def test_candidate_uses_poisson_and_excludes_station_identity():
+    """Entrenar con predictores temporales y rezagos, no con claves."""
+    hours = pd.date_range("2025-01-01", periods=240, freq="h")
+    supervised = prepare_supervised_data(make_hourly_data(hours))
+
+    model = train_candidate_model(supervised)
+
+    assert model.loss == "poisson"
+    assert model.random_state == train_module.RANDOM_SEED
+    assert "station_id" not in model.feature_names_in_
+    assert "hour" not in model.feature_names_in_
+    assert TARGET_COLUMN not in model.feature_names_in_
+    assert "departures_rolling_mean_24h" in model.feature_names_in_
+    assert np.isnan(supervised["departures_lag_168h"].iloc[0])
+    predictions = model.predict(supervised.loc[:, model.feature_names_in_])
+    assert np.isfinite(predictions).all()
+    assert (predictions >= 0).all()
+
+
+def test_candidate_evaluation_is_deterministic_and_ignores_test_by_default():
+    """El candidato usa train y no devuelve métricas del test reservado."""
+    hours = pd.date_range("2025-01-01", "2026-01-01", inclusive="left", freq="h")
+    supervised = prepare_supervised_data(make_hourly_data(hours))
+    splits = split_chronologically(supervised)
+
+    first = evaluate_candidate(splits)
+    second = evaluate_candidate(splits)
+
+    assert set(first["evaluation_set"]) == {"train", "validation"}
+    pd.testing.assert_frame_equal(
+        first.drop(columns=["fit_seconds", "evaluation_seconds"]),
+        second.drop(columns=["fit_seconds", "evaluation_seconds"]),
+    )
+    assert first["n_evaluated"].eq(first["n_total"] - first["n_excluded"]).all()
+    assert first["mae"].notna().all()
+    assert first["rmse"].notna().all()
+
+
+def test_default_cli_reads_only_through_validation_and_hides_test_metrics(
+    tmp_path,
+    monkeypatch,
+):
+    """La CLI por defecto filtra test y no publica sus métricas."""
+    calls = {}
+
+    def fake_read_parquet(path, **kwargs):
+        calls["read_filters"] = kwargs.get("filters")
+        return pd.DataFrame({"synthetic": [1]})
+
+    def fake_run_model_comparison(hourly_data, evaluate_test=False):
+        calls["evaluate_test"] = evaluate_test
+        return pd.DataFrame(
+            {
+                "evaluation_set": ["train", "validation"],
+                "model": ["dummy_mean", "dummy_mean"],
+                "mae": [1.0, 2.0],
+                "rmse": [1.0, 2.0],
+            }
+        )
+
+    monkeypatch.setattr(train_module.pd, "read_parquet", fake_read_parquet)
+    monkeypatch.setattr(train_module, "run_model_comparison", fake_run_model_comparison)
+    metrics_path = tmp_path / "metrics.csv"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        train_module.app,
+        [
+            "--input-path",
+            str(tmp_path / "input.parquet"),
+            "--metrics-path",
+            str(metrics_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls["evaluate_test"] is False
+    assert calls["read_filters"] == [("hour", "<", pd.Timestamp("2025-11-01 00:00:00"))]
+    assert set(pd.read_csv(metrics_path)["evaluation_set"]) == {"train", "validation"}
 
 
 def test_evaluate_baselines_rejects_missing_targets():
@@ -271,18 +375,21 @@ def test_evaluate_baselines_rejects_missing_targets():
 
 
 def test_run_baselines_integrates_synthetic_2025_data():
-    """Ejecutar preparación, splits y ambos baselines de extremo a extremo."""
+    """Comparar tres modelos en entrenamiento y validación sintéticos."""
     hours = pd.date_range("2025-01-01", "2026-01-01", inclusive="left", freq="h")
     hourly_data = make_hourly_data(hours)
 
-    metrics = run_baselines(hourly_data)
+    metrics = run_model_comparison(hourly_data)
 
     assert len(metrics) == 6
     assert set(metrics["evaluation_set"]) == {
         "train",
         "validation",
-        "test",
     }
-    assert set(metrics["model"]) == {"dummy_mean", "seasonal_weekly"}
+    assert set(metrics["model"]) == {
+        "dummy_mean",
+        "seasonal_weekly",
+        "hist_gradient_boosting_poisson",
+    }
     assert metrics["n_evaluated"].gt(0).all()
     assert metrics[["mae", "rmse"]].notna().all().all()
