@@ -43,7 +43,7 @@ def _target_values(data: pd.DataFrame, context: str) -> np.ndarray:
     if TARGET_COLUMN not in data.columns:
         raise ValueError(f"Falta la columna obligatoria '{TARGET_COLUMN}'.")
 
-    target = data[TARGET_COLUMN]
+    target = data[TARGET_COLUMN].infer_objects()
     if not pd.api.types.is_numeric_dtype(target) or pd.api.types.is_bool_dtype(target):
         raise TypeError(f"'{TARGET_COLUMN}' debe ser numérica en {context}.")
     if target.isna().any():
@@ -113,7 +113,10 @@ def split_chronologically(
     Los intervalos son enero-agosto, septiembre-octubre y noviembre-diciembre
     de 2025. Las fechas de inicio y fin del año se toman de la configuración;
     las fronteras mensuales se calculan desde ``START_DATE``. No se descartan
-    silenciosamente observaciones fuera de ese rango.
+    silenciosamente observaciones fuera de ese rango en las particiones
+    seleccionadas. Cuando ``evaluate_test=False``, ``hour`` es la única
+    columna usada para excluir las filas desde el inicio de test; sus claves
+    y etiquetas no se validan.
 
     Args:
         supervised_data: Tabla de ``prepare_supervised_data``.
@@ -140,12 +143,6 @@ def split_chronologically(
         raise ValueError("'hour' no puede contener valores nulos.")
     if supervised_data["hour"].dt.tz is not None:
         raise ValueError("'hour' debe usar timestamps sin zona horaria.")
-    if supervised_data["station_id"].isna().any():
-        raise ValueError("'station_id' no puede contener valores nulos.")
-    if supervised_data.duplicated(["station_id", "hour"]).any():
-        raise ValueError("Existen combinaciones estación-hora duplicadas.")
-
-    _target_values(supervised_data, "la partición temporal")
 
     year_start = pd.Timestamp(START_DATE)
     year_end = pd.Timestamp(END_DATE) + pd.Timedelta(days=1)
@@ -154,7 +151,19 @@ def split_chronologically(
     if not year_start < train_end < validation_end < year_end:
         raise ValueError("Las fechas centrales no permiten los splits de P1.")
 
-    hours = supervised_data["hour"]
+    if evaluate_test:
+        selected_data = supervised_data
+    else:
+        selected_data = supervised_data.loc[supervised_data["hour"].lt(validation_end)]
+
+    if selected_data["station_id"].isna().any():
+        raise ValueError("'station_id' no puede contener valores nulos.")
+    if selected_data.duplicated(["station_id", "hour"]).any():
+        raise ValueError("Existen combinaciones estación-hora duplicadas.")
+
+    _target_values(selected_data, "la partición temporal")
+
+    hours = selected_data["hour"]
     outside_year = (hours < year_start) | (hours >= year_end)
     if outside_year.any():
         raise ValueError("Hay horas objetivo fuera del periodo configurado de 2025.")
@@ -167,7 +176,7 @@ def split_chronologically(
         split_masks["test"] = hours.ge(validation_end) & hours.lt(year_end)
 
     splits = {
-        name: supervised_data.loc[mask]
+        name: selected_data.loc[mask]
         .sort_values(["station_id", "hour"], kind="stable")
         .reset_index(drop=True)
         for name, mask in split_masks.items()

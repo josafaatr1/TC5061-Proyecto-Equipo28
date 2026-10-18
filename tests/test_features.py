@@ -13,20 +13,12 @@ def make_hourly_data(
 ) -> pd.DataFrame:
     """Crear un dataset sintético con el esquema horario del proyecto."""
     row_count = len(hours)
-    departure_values = (
-        list(departures)
-        if departures is not None
-        else list(range(row_count))
-    )
+    departure_values = list(departures) if departures is not None else list(range(row_count))
     arrival_values = (
-        list(arrivals)
-        if arrivals is not None
-        else [10 + 2 * index for index in range(row_count)]
+        list(arrivals) if arrivals is not None else [10 + 2 * index for index in range(row_count)]
     )
     observed_values = (
-        list(is_observed_hour)
-        if is_observed_hour is not None
-        else [True] * row_count
+        list(is_observed_hour) if is_observed_hour is not None else [True] * row_count
     )
 
     for index, is_observed in enumerate(observed_values):
@@ -125,12 +117,12 @@ def test_future_values_do_not_change_features_at_or_before_their_hour():
 
     original_features = build_features(hourly_data)
     changed_features = build_features(changed_data)
-    original_past = original_features.loc[
-        original_features["hour"] <= target_hour
-    ].reset_index(drop=True)
-    changed_past = changed_features.loc[
-        changed_features["hour"] <= target_hour
-    ].reset_index(drop=True)
+    original_past = original_features.loc[original_features["hour"] <= target_hour].reset_index(
+        drop=True
+    )
+    changed_past = changed_features.loc[changed_features["hour"] <= target_hour].reset_index(
+        drop=True
+    )
 
     pd.testing.assert_frame_equal(original_past, changed_past)
     assert "departures" not in original_features.columns
@@ -149,12 +141,10 @@ def test_station_history_is_independent():
         departures=[value + 10_000 for value in range(len(hours))],
     )
 
-    combined_features = build_features(
-        pd.concat([station_one, station_two], ignore_index=True)
+    combined_features = build_features(pd.concat([station_one, station_two], ignore_index=True))
+    station_one_features = combined_features.loc[combined_features["station_id"] == 1].reset_index(
+        drop=True
     )
-    station_one_features = combined_features.loc[
-        combined_features["station_id"] == 1
-    ].reset_index(drop=True)
 
     pd.testing.assert_frame_equal(
         station_one_features,
@@ -175,8 +165,7 @@ def test_unsorted_input_returns_chronological_rows_per_station():
 
     pd.testing.assert_frame_equal(features, expected)
     assert features[["station_id", "hour"]].equals(
-        features.sort_values(["station_id", "hour"])[["station_id", "hour"]]
-        .reset_index(drop=True)
+        features.sort_values(["station_id", "hour"])[["station_id", "hour"]].reset_index(drop=True)
     )
 
 
@@ -190,12 +179,8 @@ def test_missing_hours_remain_unavailable_but_completed_zeros_are_used():
     )
 
     features = build_features(hourly_data)
-    target_after_unobserved_hour = features.loc[
-        features["hour"] == all_hours[3]
-    ].iloc[0]
-    target_after_missing_hour = features.loc[
-        features["hour"] == all_hours[5]
-    ].iloc[0]
+    target_after_unobserved_hour = features.loc[features["hour"] == all_hours[3]].iloc[0]
+    target_after_missing_hour = features.loc[features["hour"] == all_hours[5]].iloc[0]
 
     assert target_after_unobserved_hour["departures_lag_1h"] == 0
     assert target_after_unobserved_hour["arrivals_lag_1h"] == 0
@@ -214,9 +199,9 @@ def test_missing_hour_invalidates_full_elapsed_window():
     complete_hours = pd.date_range("2025-01-01", periods=26, freq="h")
     hourly_data = make_hourly_data(complete_hours.delete(10))
 
-    target = build_features(hourly_data).loc[
-        lambda frame: frame["hour"] == complete_hours[25]
-    ].iloc[0]
+    target = (
+        build_features(hourly_data).loc[lambda frame: frame["hour"] == complete_hours[25]].iloc[0]
+    )
 
     assert target["departures_lag_24h"] == 1
     assert pd.isna(target["departures_rolling_mean_24h"])

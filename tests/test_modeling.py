@@ -156,6 +156,52 @@ def test_split_chronologically_uses_expected_2025_boundaries():
     assert sum(map(len, splits.values())) == len(supervised)
 
 
+def test_split_without_test_ignores_invalid_test_labels():
+    """No validar etiquetas de noviembre-diciembre si test está reservado."""
+    supervised = pd.DataFrame(
+        {
+            "station_id": [1, 1, 1],
+            "hour": pd.to_datetime(
+                [
+                    "2025-08-31 23:00",
+                    "2025-09-01 00:00",
+                    "2025-11-01 00:00",
+                ]
+            ),
+            TARGET_COLUMN: [1, 2, "not-a-count"],
+        }
+    )
+
+    splits = split_chronologically(supervised, evaluate_test=False)
+
+    assert set(splits) == {"train", "validation"}
+    assert splits["train"][TARGET_COLUMN].tolist() == [1]
+    assert splits["validation"][TARGET_COLUMN].tolist() == [2]
+
+
+def test_split_without_test_ignores_invalid_test_station_rows():
+    """No validar claves o duplicados de noviembre-diciembre si test está reservado."""
+    supervised = pd.DataFrame(
+        {
+            "station_id": [1, 1, None, None],
+            "hour": pd.to_datetime(
+                [
+                    "2025-08-31 23:00",
+                    "2025-09-01 00:00",
+                    "2025-11-01 00:00",
+                    "2025-11-01 00:00",
+                ]
+            ),
+            TARGET_COLUMN: [1, 2, 3, 4],
+        }
+    )
+
+    splits = split_chronologically(supervised, evaluate_test=False)
+
+    assert set(splits) == {"train", "validation"}
+    assert sum(map(len, splits.values())) == 2
+
+
 def test_split_chronologically_rejects_rows_outside_configured_year():
     """Evitar descartar silenciosamente horas fuera del año evaluado."""
     supervised = pd.DataFrame(
