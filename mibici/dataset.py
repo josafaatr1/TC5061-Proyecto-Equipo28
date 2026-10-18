@@ -1,24 +1,21 @@
 
-from pathlib import Path
-
-import pandas as pd
-
-import typer
-
 import hashlib
-
+from pathlib import Path
 import time
 
-import requests
-
 from loguru import logger
+import mlflow
+import pandas as pd
+import requests
+import typer
 
 from mibici.config import (
     INTERIM_DATA_DIR,
     PROCESSED_DATA_DIR,
-    RAW_DATA_DIR,
     PROJ_ROOT,
+    RAW_DATA_DIR,
 )
+from mibici.tracking import log_pipeline_run
 
 app = typer.Typer()
 
@@ -774,7 +771,18 @@ def run_pipeline_command(
     ),
 ):
     """Ejecutar el pipeline completo de MiBici 2025."""
-    run_pipeline(year, manifest_path)
+    # Sin argumentos reutiliza el run abierto por `mlflow run` (o crea uno).
+    with mlflow.start_run():
+        start = time.perf_counter()
+        observed_path, completed_path = run_pipeline(year, manifest_path)
+
+        log_pipeline_run(
+            year,
+            manifest_path,
+            observed_path,
+            completed_path,
+            duration_seconds=time.perf_counter() - start,
+        )
 
 if __name__ == "__main__":
     app()

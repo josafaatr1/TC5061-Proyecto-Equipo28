@@ -1,0 +1,33 @@
+name: mibici-equipo28
+
+python_env: python_env.yaml
+
+entry_points:
+  load:
+    command: "python -m mibici.dataset run-pipeline"
+
+  workflow:
+    command: "python -m mibici.workflow"
+
+  # ---------------------------------------------------------------------------
+  # Pasos pendientes: descomentar cuando se implemente cada módulo y agregarlos
+  # a mibici/workflow.py.
+  # ---------------------------------------------------------------------------
+
+  # Pendiente: activar cuando se implemente mibici/features.py
+  # features:
+  #   parameters:
+  #     run_id: {type: string}
+  #   command: "python -m mibici.features --run-id {run_id}"
+
+  # Pendiente: activar cuando se implemente mibici/modeling/train.py
+  # train:
+  #   parameters:
+  #     run_id: {type: string}
+  #   command: "python -m mibici.modeling.train --run-id {run_id}"
+
+  # Pendiente: activar cuando se implemente mibici/modeling/predict.py
+  # predict:
+  #   parameters:
+  #     model_uri: {type: string}
+  #   command: "python -m mibici.modeling.predict --model-uri {model_uri}"
