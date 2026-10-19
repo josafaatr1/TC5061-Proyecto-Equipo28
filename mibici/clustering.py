@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-from sklearn.metrics import silhouette_score
+from sklearn.metrics import davies_bouldin_score, silhouette_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, StandardScaler
 
@@ -29,7 +29,7 @@ from mibici.modeling.p2_targets import VALIDATION_END, YEAR_START
 
 INPUT_PATH = PROCESSED_DATA_DIR / "station_hourly_2025_complete.parquet"
 OUTPUT_DIR = REPORTS_DIR / "clustering"
-REQUIRED_COLUMNS = {"station_id", "departures", "arrivals", "net_flow", "total_activity"}
+REQUIRED_COLUMNS = {"station_id", "hour", "departures", "arrivals", "net_flow", "total_activity"}
 SIGNED_COLUMNS = ("mean_net_flow",)
 MAX_K = 8
 N_INIT = 10
@@ -65,6 +65,7 @@ def build_station_features(df: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise ValueError(f"Faltan columnas requeridas: {sorted(missing)}")
 
+    # Variables generales por estación.
     features = (
         df.groupby("station_id")
         .agg(
@@ -79,6 +80,27 @@ def build_station_features(df: pd.DataFrame) -> pd.DataFrame:
         )
         .fillna(0)
     )
+
+    # Patrones de uso por hora del día.
+    hours = pd.to_datetime(df["hour"])
+    hourly = (
+        df.groupby(["station_id", hours.dt.hour.rename("hour_of_day")])[["departures", "arrivals"]]
+        .mean()
+        .unstack(fill_value=0)
+    )
+    hourly.columns = [f"{kind}_hora_{hour:02d}" for kind, hour in hourly.columns]
+
+    # Actividad promedio en días laborales y fines de semana.
+    day_type = np.where(hours.dt.dayofweek >= 5, "actividad_fin_semana", "actividad_laboral")
+    daily = (
+        df.groupby(["station_id", pd.Series(day_type, index=df.index, name="day_type")])[
+            "total_activity"
+        ]
+        .mean()
+        .unstack(fill_value=0)
+    )
+
+    features = features.join(hourly, how="left").join(daily, how="left").fillna(0)
 
     if len(features) < 3:
         raise ValueError("Se necesitan al menos 3 estaciones para el clustering.")
@@ -120,14 +142,16 @@ def scaled_features(model: Pipeline, features: pd.DataFrame) -> np.ndarray:
 
 
 def evaluate_k(features: pd.DataFrame, max_k: int = MAX_K) -> pd.DataFrame:
-    """Calcular el silhouette score para cada cantidad de grupos."""
+    """Calcular silhouette y Davies-Bouldin para cada cantidad de grupos."""
     results = []
     for k in range(2, min(max_k, len(features) - 1) + 1):
         model = make_model(k)
         labels = model.fit_predict(features)
-        score = silhouette_score(scaled_features(model, features), labels)
-        results.append({"k": k, "silhouette_score": score})
-        logger.info(f"k={k}: silhouette={score:.4f}")
+        X_scaled = scaled_features(model, features)
+        score = silhouette_score(X_scaled, labels)
+        db_score = davies_bouldin_score(X_scaled, labels)
+        results.append({"k": k, "silhouette_score": score, "davies_bouldin_score": db_score})
+        logger.info(f"k={k}: silhouette={score:.4f}, Davies-Bouldin={db_score:.4f}")
 
     if not results:
         raise ValueError("No fue posible evaluar cantidades de grupos.")
