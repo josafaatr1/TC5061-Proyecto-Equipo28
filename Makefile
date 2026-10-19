@@ -73,18 +73,22 @@ mlflow-workflow:
 	mlflow run . -e workflow --env-manager local
 
 
+## Run the P1 regression models with MLflow
+.PHONY: mlflow-p1
+mlflow-p1:
+	mlflow run . -e p1_train --env-manager local
+
+
+## Run the P2 steps (catalog, targets, models) with MLflow
+.PHONY: mlflow-p2
+mlflow-p2:
+	mlflow run . -e p2_catalog --env-manager local
+	mlflow run . -e p2_targets --env-manager local
+	mlflow run . -e p2_train --env-manager local
+
+
 # Pendiente: descomentar junto con su entry point en MLproject.
-# Se usa "#" simple para que `make help` no los liste.
-
-# # Run the features entry point with MLflow
-# .PHONY: mlflow-features
-# mlflow-features:
-# 	mlflow run . -e features -P run_id=$(RUN_ID) --env-manager local
-
-# # Run the train entry point with MLflow
-# .PHONY: mlflow-train
-# mlflow-train:
-# 	mlflow run . -e train -P run_id=$(RUN_ID) --env-manager local
+# Se usa "#" simple para que `make help` no lo liste.
 
 # # Run the predict entry point with MLflow
 # .PHONY: mlflow-predict
@@ -101,7 +105,7 @@ mlflow-workflow:
 define PRINT_HELP_PYSCRIPT
 import re, sys; \
 lines = '\n'.join([line for line in sys.stdin]); \
-matches = re.findall(r'\n## (.*)\n[\s\S]+?\n([a-zA-Z_-]+):', lines); \
+matches = re.findall(r'\n## (.*)\n[\s\S]+?\n([a-zA-Z0-9_-]+):', lines); \
 print('Available rules:\n'); \
 print('\n'.join(['{:25}{}'.format(*reversed(match)) for match in matches]))
 endef

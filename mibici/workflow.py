@@ -1,7 +1,7 @@
 """Workflow de MLflow: encadena los pasos del proyecto bajo un run padre.
 
-Por ahora solo incluye el paso `load`; los siguientes pasos se agregan
-aquí conforme se implementen.
+Ejecuta la ingeniería de datos, los modelos P1 y la preparación y los modelos
+P2. Los pasos de modelado leen solo train/validation (enero-octubre).
 
     mlflow run . -e workflow --env-manager local
 """
@@ -12,30 +12,21 @@ from mlflow.tracking import MlflowClient
 
 ENV_MANAGER = "local"  # Reutilizar el ambiente actual en cada paso.
 
+# Orden de ejecución: cada paso consume los archivos que genera el anterior.
+STEPS = ("load", "p1_train", "p2_catalog", "p2_targets", "p2_train")
+
 
 def main():
     """Ejecutar los pasos del proyecto como runs hijos de un run padre."""
     with mlflow.start_run() as parent:
-        load = mlflow.run(".", "load", env_manager=ENV_MANAGER)
-
-        # Pendiente: descomentar conforme se implementen los pasos. Cada paso
-        # recibe el run_id del anterior para descargar sus artefactos.
-        # features = mlflow.run(
-        #     ".", "features", env_manager=ENV_MANAGER,
-        #     parameters={"run_id": load.run_id},
-        # )
-        # train = mlflow.run(
-        #     ".", "train", env_manager=ENV_MANAGER,
-        #     parameters={"run_id": features.run_id},
-        # )
+        steps = [mlflow.run(".", step, env_manager=ENV_MANAGER) for step in STEPS]
 
         # Agrupar los pasos bajo el run padre en la UI de MLflow.
-        # Agregar aquí cada paso nuevo: (load, features, train).
         client = MlflowClient()
-        for step in (load,):
+        for step in steps:
             client.set_tag(step.run_id, "mlflow.parentRunId", parent.info.run_id)
 
-    logger.success(f"Workflow completado. Run de load: {load.run_id}")
+    logger.success(f"Workflow completado: {len(steps)} pasos.")
 
 
 if __name__ == "__main__":
