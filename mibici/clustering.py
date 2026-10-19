@@ -5,6 +5,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
 from loguru import logger
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
@@ -65,16 +66,14 @@ def main():
     features.to_csv(output_dir / "station_features.csv")
 
     # Reducir la asimetría de los indicadores antes de estandarizarlos.
-    X = features.clip(lower=0).copy()
-    signed_columns = ["mean_net_flow"]
-    for column in X.columns:
-        if column not in signed_columns:
-            X[column] = X[column].clip(lower=0).map(lambda value: __import__("numpy").log1p(value))
 
-    X["mean_net_flow"] = features["mean_net_flow"].map(
-        lambda value: __import__("numpy").sign(value)
-        * __import__("numpy").log1p(abs(value))
-    )
+X = features.copy()
+
+for column in X.columns:
+    if column == "mean_net_flow":
+        X[column] = np.sign(X[column]) * np.log1p(np.abs(X[column]))
+    else:
+        X[column] = np.log1p(X[column].clip(lower=0))
 
     # Eliminar indicadores constantes para evitar problemas de escalado.
     X = X.loc[:, X.nunique() > 1]
