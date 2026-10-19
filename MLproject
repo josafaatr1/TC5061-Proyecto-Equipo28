@@ -23,6 +23,10 @@ entry_points:
   p2_train:
     command: "python -m mibici.modeling.mlflow_runs p2"
 
+  # P3: agrupamiento de estaciones por perfil de uso (enero-octubre).
+  p3_train:
+    command: "python -m mibici.modeling.mlflow_runs p3"
+
   # Pendiente: activar cuando se implemente mibici/modeling/predict.py
   # predict:
   #   parameters:

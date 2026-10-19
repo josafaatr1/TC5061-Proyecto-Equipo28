@@ -8,10 +8,12 @@ from tests.test_modeling import make_hourly_data
 
 from mibici.modeling.mlflow_runs import (
     P1_RUN_NAMES,
+    ActivityQuantileModel,
     calculate_data_version,
     p2_run_name,
     precision_recall_table,
     run_p1,
+    run_p3,
 )
 from mibici.modeling.train import (
     evaluate_candidate,
@@ -136,3 +138,68 @@ def test_run_p1_logs_parent_and_one_child_per_model(tmp_path: Path, tracking_sto
         model = mlflow.pyfunc.load_model(logged_models[0].model_uri)
         predictions = model.predict(validation)
         assert np.isfinite(np.asarray(predictions)).all()
+
+
+def make_station_profiles(n_stations: int = 12) -> pd.DataFrame:
+    """Crear estaciones sintéticas de enero con niveles de actividad distintos."""
+    hours = pd.date_range("2025-01-01", "2025-02-01", inclusive="left", freq="h")
+    stations = []
+    for station_id in range(1, n_stations + 1):
+        departures = [(index % 7) * (1 + station_id % 4) for index in range(len(hours))]
+        stations.append(make_hourly_data(hours, departures=departures, station_id=station_id))
+
+    return pd.concat(stations, ignore_index=True)
+
+
+def test_activity_quantile_baseline_creates_groups_of_equal_size():
+    """El baseline de P3 reparte las estaciones en grupos por cuantiles."""
+    features = pd.DataFrame({"total_activity": np.arange(1, 13, dtype=float)})
+
+    model = ActivityQuantileModel.fit(features["total_activity"], n_groups=3)
+    labels = model.predict(None, features)
+
+    assert np.bincount(labels).tolist() == [4, 4, 4]
+    assert (np.diff(labels) >= 0).all()
+
+
+def test_run_p3_logs_baseline_and_one_child_per_k(tmp_path: Path, tracking_store):
+    """P3 registra un run padre, el baseline y un hijo por k con mapa y modelo."""
+    client, experiment_id = tracking_store
+    hourly_path = tmp_path / "hourly.parquet"
+    make_station_profiles().to_parquet(hourly_path)
+    catalog_path = tmp_path / "catalog.csv"
+    pd.DataFrame(
+        {
+            "id": range(1, 13),
+            "name": [f"Estación {i}" for i in range(1, 13)],
+            "latitude": np.linspace(20.6, 20.7, 12),
+            "longitude": np.linspace(-103.4, -103.3, 12),
+            "dpcapacity": 15,
+        }
+    ).to_csv(catalog_path, index=False)
+
+    summary = run_p3(hourly_path, catalog_path)
+
+    runs = client.search_runs([experiment_id])
+    parent = next(run for run in runs if run.info.run_name == "P3-clustering")
+    children = [
+        run for run in runs if run.data.tags.get("mlflow.parentRunId") == parent.info.run_id
+    ]
+
+    expected = {"P3-clustering-baseline-activity-quantiles"} | {
+        f"P3-clustering-kmeans-k{k}" for k in range(2, 9)
+    }
+    assert {run.info.run_name for run in children} == expected
+    assert summary["selected"].sum() == 1
+    assert parent.data.params["data_period"] == "2025-01-01/2025-11-01"
+
+    for run in children:
+        assert run.data.tags["question"] == "P3"
+        assert "silhouette_score" in run.data.metrics
+        artifacts = {item.path for item in client.list_artifacts(run.info.run_id, "evaluation")}
+        assert "evaluation/station_map.png" in artifacts
+
+        logged_models = client.search_logged_models(
+            [experiment_id], filter_string=f"source_run_id = '{run.info.run_id}'"
+        )
+        assert len(logged_models) == 1

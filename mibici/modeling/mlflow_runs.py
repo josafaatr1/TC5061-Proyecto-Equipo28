@@ -1,13 +1,14 @@
-"""Registro en MLflow de los experimentos supervisados P1 y P2.
+"""Registro en MLflow de los experimentos P1, P2 y P3.
 
-Reutiliza el entrenamiento y la evaluación de ``train.py`` y ``p2_train.py``
-sin duplicar su lógica y aplica el contrato de
+Reutiliza el entrenamiento y la evaluación de ``train.py``, ``p2_train.py`` y
+``clustering.py`` sin duplicar su lógica y aplica el contrato de
 ``references/p1_p2_mlflow_handoff.md``: un run padre por problema y un run
 hijo por modelo, con métricas de validación prefijadas con ``val_``. Nunca
 lee registros desde noviembre de 2025 (test reservado).
 
     mlflow run . -e p1_train --env-manager local
     mlflow run . -e p2_train --env-manager local
+    mlflow run . -e p3_train --env-manager local
 """
 
 import hashlib
@@ -22,13 +23,19 @@ import mlflow
 import numpy as np
 import pandas as pd
 from sklearn import __version__ as SKLEARN_VERSION
-from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import (
+    calinski_harabasz_score,
+    davies_bouldin_score,
+    precision_recall_curve,
+    silhouette_score,
+)
 import typer
 
+from mibici import clustering
 from mibici.config import EXTERNAL_DATA_DIR, PROCESSED_DATA_DIR, PROJ_ROOT, RANDOM_SEED
 from mibici.features import REQUIRED_COLUMNS
 from mibici.modeling import p2_train
-from mibici.modeling.p2_catalog import AUDIT_FILENAME, CATALOG_FILENAME
+from mibici.modeling.p2_catalog import AUDIT_FILENAME, CATALOG_FILENAME, load_catalog
 from mibici.modeling.p2_targets import TRAIN_END, VALIDATION_END, YEAR_START
 from mibici.modeling.train import (
     CANDIDATE_PARAMS,
@@ -52,6 +59,9 @@ PR_CURVE_MAX_POINTS = 1000
 # skops (serializador de MLflow) exige declarar los tipos internos de los
 # árboles de HistGradientBoosting; los modelos se entrenan en este proyecto.
 HGB_TRUSTED_TYPES = ["sklearn.ensemble._hist_gradient_boosting.predictor.TreePredictor"]
+# La transformación logarítmica del pipeline de P3 es una función del proyecto.
+P3_TRUSTED_TYPES = ["mibici.clustering.log_transform"]
+P3_BASELINE_NAME = "baseline_activity_quantiles"
 
 # Nombres de run del contrato (sección 9 del handoff).
 P1_RUN_NAMES = {
@@ -104,6 +114,23 @@ class SeasonalNaiveModel(mlflow.pyfunc.PythonModel):
     def predict(self, context, model_input: pd.DataFrame, params=None) -> np.ndarray:
         """Devolver el rezago semanal como predicción."""
         return model_input[SEASONAL_COLUMN].to_numpy(dtype=np.float64)
+
+
+class ActivityQuantileModel(mlflow.pyfunc.PythonModel):
+    """Baseline de P3: agrupa estaciones por cuantiles de actividad total."""
+
+    def __init__(self, edges: list[float]):
+        self.edges = edges
+
+    @classmethod
+    def fit(cls, total_activity: pd.Series, n_groups: int) -> ActivityQuantileModel:
+        """Calcular los cortes de ``n_groups`` grupos de igual tamaño."""
+        quantiles = np.linspace(0, 1, n_groups + 1)[1:-1]
+        return cls(total_activity.quantile(quantiles).tolist())
+
+    def predict(self, context, model_input: pd.DataFrame, params=None) -> np.ndarray:
+        """Asignar a cada estación el grupo de su actividad total."""
+        return np.searchsorted(self.edges, model_input["total_activity"], side="right")
 
 
 def calculate_data_version(hourly_data: pd.DataFrame) -> str:
@@ -511,6 +538,171 @@ def run_p2(
     return metrics
 
 
+def station_map_figure(
+    stations: pd.DataFrame,
+    labels: np.ndarray,
+    catalog: pd.DataFrame,
+    title: str,
+) -> Figure:
+    """Ubicar las estaciones en un mapa coloreadas por grupo."""
+    locations = (
+        pd.DataFrame({"id": stations.index, "cluster": labels})
+        .merge(catalog.loc[:, ["id", "latitude", "longitude"]], on="id", how="inner")
+        .dropna(subset=["latitude", "longitude"])
+    )
+
+    figure = Figure(figsize=(7, 7), layout="constrained")
+    axes = figure.subplots()
+    scatter = axes.scatter(
+        locations["longitude"],
+        locations["latitude"],
+        c=locations["cluster"],
+        cmap="tab10",
+        vmin=0,
+        vmax=9,
+        s=18,
+        alpha=0.85,
+    )
+    axes.set_aspect("equal")
+    axes.set_xlabel("Longitud")
+    axes.set_ylabel("Latitud")
+    axes.set_title(title)
+    axes.legend(*scatter.legend_elements(), title="Grupo")
+
+    return figure
+
+
+def clustering_metrics(X_scaled: np.ndarray, labels: np.ndarray) -> dict[str, float]:
+    """Métricas internas de calidad y tamaño de los grupos."""
+    sizes = np.bincount(labels)
+    return {
+        "silhouette_score": silhouette_score(X_scaled, labels),
+        "davies_bouldin_score": davies_bouldin_score(X_scaled, labels),
+        "calinski_harabasz_score": calinski_harabasz_score(X_scaled, labels),
+        "n_clusters": len(sizes),
+        "min_cluster_size": int(sizes.min()),
+        "max_cluster_size": int(sizes.max()),
+    }
+
+
+def run_p3(
+    hourly_path: Path = HOURLY_PATH,
+    catalog_path: Path = EXTERNAL_DATA_DIR / CATALOG_FILENAME,
+) -> pd.DataFrame:
+    """Agrupar estaciones con K-Means y registrar un run por modelo."""
+    hourly_data = read_train_validation_hourly(hourly_path)
+    data_version = calculate_data_version(hourly_data)
+
+    features = clustering.build_station_features(hourly_data)
+    result = clustering.fit_clusters(features)
+    # Mismo espacio transformado y estandarizado para comparar todos los modelos.
+    X_scaled = clustering.scaled_features(result.model, features)
+
+    if catalog_path.is_file():
+        catalog = load_catalog(catalog_path, strict=False)
+    else:
+        catalog = None
+        logger.warning(f"No se encontró el catálogo {catalog_path}; se omite el mapa.")
+
+    feature_columns = list(features.columns)
+    tags = {**common_tags("P3", data_version), "objective": "perfiles de uso por estación"}
+    shared_params = {
+        "random_state": RANDOM_SEED,
+        "data_period": f"{YEAR_START.date()}/{VALIDATION_END.date()}",
+        "n_stations": len(features),
+        "feature_columns": ",".join(feature_columns),
+        "transform": "log1p (con signo en mean_net_flow) + StandardScaler",
+        "k_range": f"2-{result.evaluation['k'].max()}",
+        "selection_metric": "silhouette_score",
+    }
+    dataset = mlflow.data.from_pandas(hourly_data, source=str(hourly_path), name=DATASET_NAME)
+
+    baseline = ActivityQuantileModel.fit(features["total_activity"], result.best_k)
+    candidates = {P3_BASELINE_NAME: (baseline, baseline.predict(None, features))}
+    for k in result.evaluation["k"]:
+        model = clustering.make_model(k)
+        candidates[f"kmeans_k{k}"] = (model, model.fit_predict(features))
+
+    summary = []
+    with mlflow.start_run():
+        mlflow.set_tags(
+            {
+                **tags,
+                "mlflow.runName": "P3-clustering",
+                "selected_model": f"kmeans_k{result.best_k}",
+            }
+        )
+        mlflow.log_params({**shared_params, "selected_k": result.best_k})
+        mlflow.log_text(features.to_csv(), "reports/station_features.csv")
+        mlflow.log_text(result.evaluation.to_csv(index=False), "reports/p3_k_evaluation.csv")
+        mlflow.log_figure(
+            clustering.silhouette_figure(result.evaluation), "evaluation/silhouette_by_k.png"
+        )
+
+        for model_name, (model, labels) in candidates.items():
+            is_baseline = model_name == P3_BASELINE_NAME
+            metrics = clustering_metrics(X_scaled, labels)
+            title = f"{model_name} ({metrics['n_clusters']} grupos)"
+
+            with mlflow.start_run(
+                run_name=f"P3-clustering-{model_name}".replace("_", "-"), nested=True
+            ):
+                selected = model_name == f"kmeans_k{result.best_k}"
+                mlflow.set_tags({**tags, "model_name": model_name, "selected": str(selected)})
+                if is_baseline:
+                    model_params = {
+                        "model_class": "mibici.modeling.mlflow_runs.ActivityQuantileModel",
+                        "n_groups": result.best_k,
+                        "quantile_column": "total_activity",
+                    }
+                else:
+                    model_params = {
+                        "model_class": "sklearn.cluster.KMeans",
+                        "n_clusters": int(metrics["n_clusters"]),
+                        "n_init": clustering.N_INIT,
+                    }
+                mlflow.log_params({**shared_params, **model_params})
+                mlflow.log_input(dataset, context="training")
+
+                if not is_baseline:
+                    metrics["inertia"] = float(model[-1].inertia_)
+                mlflow.log_metrics(metrics)
+
+                mlflow.log_text(
+                    features.assign(cluster=labels).to_csv(), "evaluation/station_clusters.csv"
+                )
+                mlflow.log_text(
+                    clustering.cluster_profiles(features, labels).to_csv(),
+                    "evaluation/cluster_profiles.csv",
+                )
+                mlflow.log_figure(
+                    clustering.pca_figure(X_scaled, labels, int(metrics["n_clusters"])),
+                    "evaluation/pca.png",
+                )
+                if catalog is not None:
+                    mlflow.log_figure(
+                        station_map_figure(features, labels, catalog, title),
+                        "evaluation/station_map.png",
+                    )
+
+                if is_baseline:
+                    mlflow.pyfunc.log_model(
+                        name="model", python_model=model, input_example=features.head(5)
+                    )
+                else:
+                    mlflow.sklearn.log_model(
+                        model,
+                        name="model",
+                        input_example=features.head(5),
+                        skops_trusted_types=P3_TRUSTED_TYPES,
+                    )
+
+            summary.append({"model": model_name, "selected": selected, **metrics})
+
+    logger.success("Runs P3 registrados en MLflow.")
+    return pd.DataFrame(summary)
+
+
 @app.command("p1")
 def p1_command(hourly_path: Path = HOURLY_PATH):
     """Registrar en MLflow los modelos P1 (solo train/validation)."""
@@ -527,6 +719,16 @@ def p2_command(
     """Registrar en MLflow los modelos P2 (solo train/validation)."""
     metrics = run_p2(label_path, hourly_path, catalog_path)
     logger.info(f"Métricas P2:\n{metrics.to_string(index=False)}")
+
+
+@app.command("p3")
+def p3_command(
+    hourly_path: Path = HOURLY_PATH,
+    catalog_path: Path = EXTERNAL_DATA_DIR / CATALOG_FILENAME,
+):
+    """Registrar en MLflow el agrupamiento de estaciones P3 (enero-octubre)."""
+    metrics = run_p3(hourly_path, catalog_path)
+    logger.info(f"Métricas P3:\n{metrics.to_string(index=False)}")
 
 
 if __name__ == "__main__":
