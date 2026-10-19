@@ -86,6 +86,11 @@ mlflow-p2:
 	mlflow run . -e p2_targets --env-manager local
 	mlflow run . -e p2_train --env-manager local
 
+## Run the P3 clustering with MLflow
+.PHONY: mlflow-p3
+mlflow-p3:
+	mlflow run . -e p3_train --env-manager local
+
 
 # Pendiente: descomentar junto con su entry point en MLproject.
 # Se usa "#" simple para que `make help` no lo liste.
