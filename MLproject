@@ -9,22 +9,19 @@ entry_points:
   workflow:
     command: "python -m mibici.workflow"
 
-  # ---------------------------------------------------------------------------
-  # Pasos pendientes: descomentar cuando se implemente cada módulo y agregarlos
-  # a mibici/workflow.py.
-  # ---------------------------------------------------------------------------
+  # P1: regresión de salidas por estación-hora (solo train/validation).
+  p1_train:
+    command: "python -m mibici.modeling.mlflow_runs p1"
 
-  # Pendiente: activar cuando se implemente mibici/features.py
-  # features:
-  #   parameters:
-  #     run_id: {type: string}
-  #   command: "python -m mibici.features --run-id {run_id}"
+  # P2: catálogo de capacidades, etiquetas proxy y clasificadores.
+  p2_catalog:
+    command: "python -m mibici.modeling.p2_catalog"
 
-  # Pendiente: activar cuando se implemente mibici/modeling/train.py
-  # train:
-  #   parameters:
-  #     run_id: {type: string}
-  #   command: "python -m mibici.modeling.train --run-id {run_id}"
+  p2_targets:
+    command: "python -m mibici.modeling.p2_targets"
+
+  p2_train:
+    command: "python -m mibici.modeling.mlflow_runs p2"
 
   # Pendiente: activar cuando se implemente mibici/modeling/predict.py
   # predict:
