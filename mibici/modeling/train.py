@@ -369,13 +369,22 @@ def evaluate_baselines(
 def evaluate_candidate(
     splits: dict[str, pd.DataFrame],
     evaluate_test: bool = False,
+    model: HistGradientBoostingRegressor | None = None,
+    fit_seconds: float | None = None,
 ) -> pd.DataFrame:
-    """Ajustar y evaluar el candidato sobre la cohorte de los baselines."""
+    """Ajustar y evaluar el candidato sobre la cohorte de los baselines.
+
+    Si se recibe ``model`` ya ajustado con ``train_candidate_model``, se evalúa
+    sin volver a entrenar; ``fit_seconds`` reporta el tiempo de ese ajuste.
+    """
     split_names = _validate_evaluation_splits(splits, evaluate_test)
 
-    fit_start = perf_counter()
-    model = train_candidate_model(splits["train"])
-    fit_seconds = perf_counter() - fit_start
+    if model is None:
+        fit_start = perf_counter()
+        model = train_candidate_model(splits["train"])
+        fit_seconds = perf_counter() - fit_start
+    elif fit_seconds is None:
+        fit_seconds = float("nan")
     feature_columns = tuple(model.feature_names_in_)
     results = []
 

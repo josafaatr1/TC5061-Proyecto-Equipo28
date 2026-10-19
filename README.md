@@ -165,9 +165,15 @@ Requiere conexión a Internet para descargar los archivos que aún no estén dis
 | Entry point | Comando | Con `make` | Qué hace |
 |---|---|---|---|
 | `load` | `mlflow run . -e load --env-manager local` | `make mlflow-load` | Ejecuta el pipeline de datos (descarga, preparación y datasets horarios) |
-| `workflow` | `mlflow run . -e workflow --env-manager local` | `make mlflow-workflow` | Encadena los pasos del proyecto como runs hijos de un run padre |
+| `p1_train` | `mlflow run . -e p1_train --env-manager local` | `make mlflow-p1` | Entrena y valida los modelos de regresión P1 |
+| `p2_catalog` | `mlflow run . -e p2_catalog --env-manager local` | `make mlflow-p2` | Descarga y audita el catálogo de capacidades de estaciones |
+| `p2_targets` | `mlflow run . -e p2_targets --env-manager local` | `make mlflow-p2` | Construye las etiquetas proxy de P2 para train y validation |
+| `p2_train` | `mlflow run . -e p2_train --env-manager local` | `make mlflow-p2` | Verifica las etiquetas y entrena y valida los clasificadores P2 |
+| `workflow` | `mlflow run . -e workflow --env-manager local` | `make mlflow-workflow` | Encadena todos los pasos anteriores como runs hijos de un run padre |
 
-Por ahora `workflow` solo contiene el paso `load`; los pasos de modelado se agregarán en `mibici/workflow.py` conforme se implementen.
+Cada paso usa los archivos que genera el anterior: P1 y P2 leen el dataset horario de `load`, y `p2_train` necesita el catálogo y las etiquetas de `p2_catalog` y `p2_targets`. `make mlflow-p2` ejecuta los tres pasos de P2 en orden. `p2_catalog` requiere conexión a Internet.
+
+Los pasos de modelado solo leen datos de enero a octubre de 2025 (train y validation); noviembre y diciembre quedan reservados como test y ningún paso calcula métricas sobre ellos.
 
 Los comandos de `make` ya definen `MLFLOW_EXPERIMENT_NAME=mibici-equipo28`, por lo que no hace falta el `export` de la sección 7.1.
 
@@ -190,7 +196,23 @@ El paso `load` registra en su run:
 | Métricas | Viajes totales y por mes (`trips_month`), indicadores de calidad (`*_count`, `*_pct`), filas de los datasets horarios, estaciones observadas, porcentaje de horas sin actividad y duración del pipeline |
 | Artefactos | `reports/raw_inventory.csv`, `reports/quality_by_month.csv` y los dos datasets horarios en `processed/` |
 
-Los pasos de modelado podrán descargar los datasets horarios con el `run_id` del paso `load`.
+Los pasos `p1_train` y `p2_train` registran un run padre por problema (`P1-regression` y `P2-classification`) y, dentro de él, un run hijo por modelo:
+
+| Problema | Runs hijos |
+|---|---|
+| P1 | `P1-regression-dummy-mean`, `P1-regression-seasonal-168h`, `P1-regression-hist-gradient-boosting-poisson` |
+| P2 | `P2-bike-pressure-dummy-prior`, `P2-bike-pressure-hist-gradient-boosting-balanced`, `P2-dock-pressure-dummy-prior`, `P2-dock-pressure-hist-gradient-boosting-balanced` |
+
+Cada run hijo registra:
+
+| Tipo | Qué se registra |
+|---|---|
+| Parámetros | Clase e hiperparámetros del modelo, `random_state`, columnas predictoras, periodos y tamaños de train/validation; en P2, también los umbrales proxy y el umbral de clasificación |
+| Tags | Pregunta, objetivo, equipo, commit de Git, versiones de Python y scikit-learn y `train_validation_data_version` (huella del dataset horario de enero a octubre); en P2, también la versión y el hash del catálogo y el hash de las etiquetas |
+| Métricas | Prefijo `val_`: `val_mae` y `val_rmse` en P1; `val_average_precision`, `val_precision`, `val_recall`, `val_f1`, prevalencia y celdas de la matriz de confusión en P2 |
+| Artefactos | Modelo registrado (baselines y candidatos); en `evaluation/`, el perfil horario real contra predicho en P1, y la matriz de confusión y la curva Precision-Recall en P2 |
+
+El run padre guarda la tabla comparativa de los modelos y un reporte JSON con los parámetros y la procedencia de los datos en `reports/`.
 
 `mlflow.db`, `mlruns/` y `mlartifacts/` se crean solos al correr y están excluidos de Git.
 
