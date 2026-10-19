@@ -50,6 +50,7 @@ def main():
         raise ValueError(f"Faltan columnas requeridas: {sorted(missing)}")
 
     logger.info("Calculando indicadores por estación...")
+    # Variables generales por estación.
     features = df.groupby("station_id").agg(
         total_departures=("departures", "sum"),
         total_arrivals=("arrivals", "sum"),
@@ -60,6 +61,32 @@ def main():
         mean_net_flow=("net_flow", "mean"),
         std_activity=("total_activity", "std"),
     ).fillna(0)
+
+    # Patrones de uso por hora del día.
+    df["hour"] = pd.to_datetime(df["hour"])
+    df["hour_of_day"] = df["hour"].dt.hour
+    df["day_type"] = df["hour"].dt.dayofweek.map(
+        lambda day: "fin_semana" if day >= 5 else "laboral"
+    )
+
+    hourly = df.groupby(["station_id", "hour_of_day"])[
+        ["departures", "arrivals"]
+    ].mean().unstack(fill_value=0)
+    hourly.columns = [
+        f"{kind}_hora_{hour:02d}" for kind, hour in hourly.columns
+    ]
+
+    daily = df.groupby(["station_id", "day_type"])[
+        "total_activity"
+    ].mean().unstack(fill_value=0)
+
+    daily = daily.rename(columns={
+        "laboral": "actividad_laboral",
+        "fin_semana": "actividad_fin_semana",
+    })
+
+    features = features.join(hourly, how="left").join(daily, how="left")
+    features = features.fillna(0)
 
     if len(features) < 3:
         raise ValueError("Se necesitan al menos 3 estaciones para el clustering.")
