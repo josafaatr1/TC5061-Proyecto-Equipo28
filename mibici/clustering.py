@@ -10,6 +10,7 @@ from loguru import logger
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
+from sklearn.metrics import davies_bouldin_score
 from sklearn.preprocessing import StandardScaler
 
 from mibici.config import (
@@ -90,8 +91,13 @@ def main():
         model = KMeans(n_clusters=k, random_state=RANDOM_SEED, n_init=10)
         labels = model.fit_predict(X_scaled)
         score = silhouette_score(X_scaled, labels)
-        results.append({"k": k, "silhouette_score": score})
-        logger.info(f"k={k}: silhouette={score:.4f}")
+        db_score = davies_bouldin_score(X_scaled, labels)
+        results.append({
+            "k": k,
+            "silhouette_score": score,
+            "davies_bouldin_score": db_score,
+        })
+        logger.info(f"k={k}: silhouette={score:.4f}, Davies-Bouldin={db_score:.4f}")
 
     if not results:
         raise ValueError("No fue posible evaluar cantidades de grupos.")
