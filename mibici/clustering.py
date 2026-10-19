@@ -66,14 +66,13 @@ def main():
     features.to_csv(output_dir / "station_features.csv")
 
     # Reducir la asimetría de los indicadores antes de estandarizarlos.
+    X = features.copy()
 
-X = features.copy()
-
-for column in X.columns:
-    if column == "mean_net_flow":
-        X[column] = np.sign(X[column]) * np.log1p(np.abs(X[column]))
-    else:
-        X[column] = np.log1p(X[column].clip(lower=0))
+    for column in X.columns:
+        if column == "mean_net_flow":
+            X[column] = np.sign(X[column]) * np.log1p(np.abs(X[column]))
+        else:
+            X[column] = np.log1p(X[column].clip(lower=0))
 
     # Eliminar indicadores constantes para evitar problemas de escalado.
     X = X.loc[:, X.nunique() > 1]
