@@ -276,12 +276,12 @@ el entrenamiento.
 
 ## 10. Estado de integración y bloqueos
 
-- [`MLproject`](../MLproject) solo declara activos `load` y `workflow`.
-  [`workflow.py`](../mibici/workflow.py) ejecuta únicamente `load`; no orquesta
+- [`MLproject`](../MLproject) solo declara activos `ingest` y `workflow`.
+  [`workflow.py`](../mibici/workflow.py) ejecuta únicamente `ingest`; no orquesta
   features ni entrenamiento supervisado. Los ejemplos comentados de `features`
   y `train` usan `--run-id`, opción que no existe en las CLIs actuales. No hay
   entry points activos para P1/P2.
-- El `load` activo llama a `dataset.run-pipeline`, que descarga y procesa los
+- El `ingest` activo llama a `dataset.run-pipeline`, que descarga y procesa los
   doce meses de 2025. Por tanto, `mlflow run . -e workflow` toca los datos de
   noviembre-diciembre aunque no calcule métricas de test. No usar ese workflow
   durante esta evaluación con test reservado hasta coordinar una carga limitada
