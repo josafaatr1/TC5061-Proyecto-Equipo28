@@ -61,10 +61,10 @@ create_environment:
 # PROJECT RULES                                                                 #
 #################################################################################
 
-## Run the load entry point with MLflow
-.PHONY: mlflow-load
-mlflow-load:
-	mlflow run . -e load --env-manager local
+## Run the ingest entry point with MLflow
+.PHONY: mlflow-ingest
+mlflow-ingest:
+	mlflow run . -e ingest --env-manager local
 
 
 ## Run the full workflow with MLflow
