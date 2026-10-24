@@ -3,6 +3,9 @@ name: mibici-equipo28
 python_env: python_env.yaml
 
 entry_points:
+  # Fase 2: ingesta reproducible y trazable.
+  ingest:
+    command: "python -m mibici.dataset run-pipeline"
   load:
     command: "python -m mibici.dataset run-pipeline"
 
