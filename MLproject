@@ -6,8 +6,6 @@ entry_points:
   # Fase 2: ingesta reproducible y trazable.
   ingest:
     command: "python -m mibici.dataset run-pipeline"
-  load:
-    command: "python -m mibici.dataset run-pipeline"
 
   workflow:
     command: "python -m mibici.workflow"

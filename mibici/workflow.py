@@ -13,7 +13,7 @@ from mlflow.tracking import MlflowClient
 ENV_MANAGER = "local"  # Reutilizar el ambiente actual en cada paso.
 
 # Orden de ejecución: cada paso consume los archivos que genera el anterior.
-STEPS = ("load", "p1_train", "p2_catalog", "p2_targets", "p2_train", "p3_train")
+STEPS = ("ingest", "p1_train", "p2_catalog", "p2_targets", "p2_train", "p3_train")
 
 
 def main():

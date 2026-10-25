@@ -150,10 +150,10 @@ export MLFLOW_EXPERIMENT_NAME=mibici-equipo28   # si no, los runs caen en "Defau
 ### 7.2. Correr el proyecto
 
 ```bash
-mlflow run . -e load --env-manager local
+mlflow run . -e ingest --env-manager local
 ```
 
-MLflow lee el archivo `MLproject`, toma el entry point `load` y ejecuta
+MLflow lee el archivo `MLproject`, toma el entry point `ingest` y ejecuta
 `python -m mibici.dataset run-pipeline`, es decir, el pipeline completo de la sección 8.4.
 La opción `--env-manager local` usa el ambiente activado en lugar de crear uno nuevo.
 Al final debe decir `=== Run (ID '...') succeeded ===`.
@@ -164,7 +164,7 @@ Requiere conexión a Internet para descargar los archivos que aún no estén dis
 
 | Entry point | Comando | Con `make` | Qué hace |
 |---|---|---|---|
-| `load` | `mlflow run . -e load --env-manager local` | `make mlflow-load` | Ejecuta el pipeline de datos (descarga, preparación y datasets horarios) |
+| `ingest` | `mlflow run . -e ingest --env-manager local` | `make mlflow-ingest` | Ejecuta el pipeline de datos (descarga, preparación y datasets horarios) |
 | `p1_train` | `mlflow run . -e p1_train --env-manager local` | `make mlflow-p1` | Entrena y valida los modelos de regresión P1 |
 | `p2_catalog` | `mlflow run . -e p2_catalog --env-manager local` | `make mlflow-p2` | Descarga y audita el catálogo de capacidades de estaciones |
 | `p2_targets` | `mlflow run . -e p2_targets --env-manager local` | `make mlflow-p2` | Construye las etiquetas proxy de P2 para train y validation |
@@ -172,7 +172,7 @@ Requiere conexión a Internet para descargar los archivos que aún no estén dis
 | `p3_train` | `mlflow run . -e p3_train --env-manager local` | `make mlflow-p3` | Agrupa las estaciones por perfil de uso con K-Means y un baseline por cuantiles |
 | `workflow` | `mlflow run . -e workflow --env-manager local` | `make mlflow-workflow` | Encadena todos los pasos anteriores como runs hijos de un run padre |
 
-Cada paso usa los archivos que genera el anterior: P1, P2 y P3 leen el dataset horario de `load`, y `p2_train` necesita el catálogo y las etiquetas de `p2_catalog` y `p2_targets`. `p3_train` usa el catálogo para dibujar el mapa de grupos; si no está descargado, omite el mapa. `make mlflow-p2` ejecuta los tres pasos de P2 en orden. `p2_catalog` requiere conexión a Internet.
+Cada paso usa los archivos que genera el anterior: P1, P2 y P3 leen el dataset horario de `ingest`, y `p2_train` necesita el catálogo y las etiquetas de `p2_catalog` y `p2_targets`. `p3_train` usa el catálogo para dibujar el mapa de grupos; si no está descargado, omite el mapa. `make mlflow-p2` ejecuta los tres pasos de P2 en orden. `p2_catalog` requiere conexión a Internet.
 
 Los pasos de modelado solo leen datos de enero a octubre de 2025 (train y validation); noviembre y diciembre quedan reservados como test y ningún paso calcula métricas sobre ellos.
 
@@ -188,7 +188,7 @@ Abre http://127.0.0.1:5000 y selecciona el experimento `mibici-equipo28` para re
 
 No hace falta tener la UI abierta mientras corres los runs: puedes abrirla después.
 
-El paso `load` registra en su run:
+El paso `ingest` registra en su run:
 
 | Tipo | Qué se registra |
 |---|---|
