@@ -84,3 +84,69 @@ def test_summarize_hourly(tmp_path: Path):
     assert summary["completed_rows"] == 4
     assert summary["stations_observed"] == 2
     assert summary["zero_activity_pct"] == 50
+
+def test_log_pipeline_run_registra_manifiesto(tmp_path, monkeypatch):
+    """Verificar que el manifiesto se registre como artefacto de MLflow."""
+    from unittest.mock import Mock
+
+    import mibici.tracking as tracking
+
+    manifest_path = tmp_path / "mibici_sources_2025.csv"
+    manifest_path.write_text("month,url\n1,https://example.com/data.csv\n")
+
+    observed_path = tmp_path / "observed.parquet"
+    completed_path = tmp_path / "completed.parquet"
+
+    # Sustituir los resúmenes para no depender del pipeline anual.
+    monkeypatch.setattr(
+        tracking,
+        "summarize_raw_files",
+        lambda year: pd.DataFrame(
+            {"month": [1], "sha256": ["a" * 64], "size_bytes": [100]}
+        ),
+    )
+    monkeypatch.setattr(
+        tracking,
+        "summarize_quality",
+        lambda year: pd.DataFrame(
+            {
+                "month": [1],
+                "trips": [10],
+                "invalid_timestamp": [0],
+                "nonpositive_duration": [0],
+                "long_trips": [0],
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        tracking,
+        "summarize_hourly",
+        lambda observed, completed: {
+            "observed_rows": 5,
+            "completed_rows": 8,
+            "stations_observed": 2,
+            "zero_activity_pct": 37.5,
+        },
+    )
+
+    # Evitar conexiones reales a MLflow.
+    log_artifact = Mock()
+    monkeypatch.setattr(tracking.mlflow, "log_artifact", log_artifact)
+    monkeypatch.setattr(tracking.mlflow, "log_params", Mock())
+    monkeypatch.setattr(tracking.mlflow, "log_metrics", Mock())
+    monkeypatch.setattr(tracking.mlflow, "log_metric", Mock())
+    monkeypatch.setattr(tracking.mlflow, "set_tag", Mock())
+
+    tracking.log_pipeline_run(
+        year=2025,
+        manifest_path=manifest_path,
+        observed_path=observed_path,
+        completed_path=completed_path,
+        duration_seconds=1.0,
+    )
+
+    # Comprobar que el manifiesto se registra en la carpeta esperada.
+    log_artifact.assert_any_call(
+        str(manifest_path),
+        artifact_path="manifests",
+    )

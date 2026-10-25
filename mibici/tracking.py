@@ -148,6 +148,8 @@ def log_pipeline_run(
         mlflow.log_artifact(str(inventory_path), artifact_path="reports")
         mlflow.log_artifact(str(quality_path), artifact_path="reports")
 
+    # Conservar el manifiesto de fuentes para reproducir la ingesta.
+    mlflow.log_artifact(str(manifest_path), artifact_path="manifests")
     mlflow.log_artifact(str(observed_path), artifact_path="processed")
     mlflow.log_artifact(str(completed_path), artifact_path="processed")
 
