@@ -6,6 +6,7 @@ PROJECT_NAME = TC5061-Proyecto-Equipo28
 PYTHON_VERSION = 3.14
 PYTHON_INTERPRETER = python
 export MLFLOW_EXPERIMENT_NAME ?= mibici-equipo28
+QUESTION ?= p1
 
 #################################################################################
 # COMMANDS                                                                      #
@@ -90,6 +91,21 @@ mlflow-p2:
 .PHONY: mlflow-p3
 mlflow-p3:
 	mlflow run . -e p3_train --env-manager local
+
+## Train one question with MLflow (QUESTION=p1|p2|p3)
+.PHONY: mlflow-train
+mlflow-train:
+	mlflow run . -e train -P question=$(QUESTION) --env-manager local
+
+## Register the best models and update the champion alias
+.PHONY: mlflow-register
+mlflow-register:
+	mlflow run . -e register --env-manager local
+
+## Start the MLflow tracking server (sqlite backend) on port 5000
+.PHONY: mlflow-server
+mlflow-server:
+	mlflow server --backend-store-uri sqlite:///mlflow.db --artifacts-destination ./mlartifacts --host 127.0.0.1 --port 5000
 
 
 # Pendiente: descomentar junto con su entry point en MLproject.

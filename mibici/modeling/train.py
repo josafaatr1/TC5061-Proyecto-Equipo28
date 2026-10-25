@@ -13,6 +13,7 @@ import typer
 
 from mibici.config import (
     END_DATE,
+    HGB_PARAMS,
     PROCESSED_DATA_DIR,
     RANDOM_SEED,
     REPORTS_DIR,
@@ -28,11 +29,7 @@ SEASONAL_COLUMN = "departures_lag_168h"
 PREDICTOR_EXCLUDED_COLUMNS = frozenset({"station_id", "hour", TARGET_COLUMN})
 CANDIDATE_PARAMS = {
     "loss": "poisson",
-    "learning_rate": 0.1,
-    "max_iter": 100,
-    "max_leaf_nodes": 31,
-    "min_samples_leaf": 50,
-    "l2_regularization": 1.0,
+    **HGB_PARAMS,
     "early_stopping": False,
     "random_state": RANDOM_SEED,
 }
@@ -243,12 +240,14 @@ def _feature_matrix(
 
 def train_candidate_model(
     training_data: pd.DataFrame,
+    params: dict | None = None,
 ) -> HistGradientBoostingRegressor:
     """Ajustar HistGradientBoostingRegressor Poisson usando exclusivamente train.
 
     Las características faltantes se conservan: HistGradientBoostingRegressor
     las maneja de forma nativa. ``station_id`` se excluye porque su orden
     numérico no representa una relación de magnitud entre estaciones.
+    ``params`` reemplaza los hiperparámetros de ``CANDIDATE_PARAMS``.
     """
     if not isinstance(training_data, pd.DataFrame):
         raise TypeError("training_data debe ser un pandas.DataFrame.")
@@ -257,7 +256,7 @@ def train_candidate_model(
 
     targets = _target_values(training_data, "train")
     features, _ = _feature_matrix(training_data)
-    model = HistGradientBoostingRegressor(**CANDIDATE_PARAMS)
+    model = HistGradientBoostingRegressor(**(params or CANDIDATE_PARAMS))
     model.fit(features, targets)
 
     return model

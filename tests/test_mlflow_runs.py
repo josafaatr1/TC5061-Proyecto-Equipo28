@@ -5,7 +5,10 @@ import numpy as np
 import pandas as pd
 import pytest
 from tests.test_modeling import make_hourly_data
+import yaml
 
+from mibici import clustering, config
+from mibici.config import PROJ_ROOT
 from mibici.modeling.mlflow_runs import (
     P1_RUN_NAMES,
     ActivityQuantileModel,
@@ -22,6 +25,8 @@ from mibici.modeling.train import (
     train_candidate_model,
 )
 
+MLPROJECT_PATH = PROJ_ROOT / "MLproject"
+
 
 def make_train_validation_hourly() -> pd.DataFrame:
     """Crear dos estaciones sintéticas de enero a octubre de 2025."""
@@ -30,19 +35,6 @@ def make_train_validation_hourly() -> pd.DataFrame:
         [make_hourly_data(hours, station_id=1), make_hourly_data(hours, station_id=2)],
         ignore_index=True,
     )
-
-
-@pytest.fixture
-def tracking_store(tmp_path: Path, monkeypatch):
-    """Usar un tracking store temporal con artefactos dentro de tmp_path."""
-    monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path / 'mlflow.db'}")
-    mlflow.set_tracking_uri(f"sqlite:///{tmp_path / 'mlflow.db'}")
-    experiment_id = mlflow.create_experiment(
-        "test", artifact_location=(tmp_path / "artifacts").as_uri()
-    )
-    monkeypatch.setenv("MLFLOW_EXPERIMENT_ID", experiment_id)
-    yield mlflow.MlflowClient(), experiment_id
-    mlflow.set_tracking_uri(None)
 
 
 def test_data_version_ignores_row_order_and_detects_changes():
@@ -203,3 +195,52 @@ def test_run_p3_logs_baseline_and_one_child_per_k(tmp_path: Path, tracking_store
             [experiment_id], filter_string=f"source_run_id = '{run.info.run_id}'"
         )
         assert len(logged_models) == 1
+
+
+def test_run_p1_applies_hyperparameters_and_model_filter(tmp_path: Path, tracking_store):
+    """`train` puede registrar un solo modelo con hiperparámetros propios."""
+    client, experiment_id = tracking_store
+    hourly_path = tmp_path / "hourly.parquet"
+    make_train_validation_hourly().to_parquet(hourly_path)
+
+    run_p1(
+        hourly_path,
+        hgb_params={"learning_rate": 0.05, "max_iter": 20},
+        model="hist_gradient_boosting_poisson",
+    )
+
+    runs = client.search_runs([experiment_id])
+    children = [run for run in runs if "mlflow.parentRunId" in run.data.tags]
+    assert [run.info.run_name for run in children] == [
+        P1_RUN_NAMES["hist_gradient_boosting_poisson"]
+    ]
+    assert children[0].data.params["learning_rate"] == "0.05"
+    assert children[0].data.params["max_iter"] == "20"
+    assert children[0].data.params["loss"] == "poisson"
+
+
+def test_fit_clusters_accepts_fixed_k():
+    """P3 usa el k fijo recibido en lugar del elegido por silhouette."""
+    features = clustering.build_station_features(make_station_profiles())
+
+    result = clustering.fit_clusters(features, max_k=5, k=4)
+
+    assert result.best_k == 4
+    assert len(np.unique(result.labels)) == 4
+    with pytest.raises(ValueError, match="k=9"):
+        clustering.fit_clusters(features, max_k=5, k=9)
+
+
+def test_mlproject_defaults_match_config():
+    """Los valores por defecto de MLproject son los de config.py."""
+    entry_points = yaml.safe_load(MLPROJECT_PATH.read_text())["entry_points"]
+
+    ingest = entry_points["ingest"]["parameters"]
+    assert ingest["year"]["default"] == config.INGEST_YEAR
+    assert PROJ_ROOT / ingest["manifest_path"]["default"] == config.SOURCES_MANIFEST
+
+    train = entry_points["train"]["parameters"]
+    assert "default" not in train["question"]
+    for name, value in config.HGB_PARAMS.items():
+        assert train[name]["default"] == value
+    assert train["max_k"]["default"] == config.P3_MAX_K

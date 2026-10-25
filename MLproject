@@ -4,8 +4,12 @@ python_env: python_env.yaml
 
 entry_points:
   # Fase 2: ingesta reproducible y trazable.
+  # Valores por defecto tomados de mibici/config.py (INGEST_YEAR, SOURCES_MANIFEST).
   ingest:
-    command: "python -m mibici.dataset run-pipeline"
+    parameters:
+      year: {type: int, default: 2025}
+      manifest_path: {type: path, default: references/mibici_sources_2025.csv}
+    command: "python -m mibici.dataset run-pipeline --year {year} --manifest-path {manifest_path}"
 
   workflow:
     command: "python -m mibici.workflow"
@@ -27,6 +31,31 @@ entry_points:
   # P3: agrupamiento de estaciones por perfil de uso (enero-octubre).
   p3_train:
     command: "python -m mibici.modeling.mlflow_runs p3"
+
+  # Entrenamiento parametrizable de una pregunta. Valores por defecto tomados de
+  # mibici/config.py (HGB_PARAMS para P1 y P2; P3_MAX_K para P3; k=0 elige por silhouette).
+  train:
+    parameters:
+      question: {type: string}
+      model: {type: string, default: all}
+      learning_rate: {type: float, default: 0.1}
+      max_iter: {type: int, default: 100}
+      max_leaf_nodes: {type: int, default: 31}
+      min_samples_leaf: {type: int, default: 50}
+      l2_regularization: {type: float, default: 1.0}
+      k: {type: int, default: 0}
+      max_k: {type: int, default: 8}
+    command: >-
+      python -m mibici.modeling.mlflow_runs train
+      --question {question} --model {model}
+      --learning-rate {learning_rate} --max-iter {max_iter}
+      --max-leaf-nodes {max_leaf_nodes} --min-samples-leaf {min_samples_leaf}
+      --l2-regularization {l2_regularization} --k {k} --max-k {max_k}
+
+  # Model Registry: registra el mejor modelo del último entrenamiento de cada
+  # pregunta y mueve el alias "champion" solo si mejora su métrica de validación.
+  register:
+    command: "python -m mibici.modeling.registry"
 
   # Pendiente: activar cuando se implemente mibici/modeling/predict.py
   # predict:

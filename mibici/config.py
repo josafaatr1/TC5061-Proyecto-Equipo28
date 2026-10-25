@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -34,6 +35,26 @@ END_DATE = "2025-12-31"
 # Directorios adicionales del proyecto
 REFERENCES_DIR = PROJ_ROOT / "references"
 NOTEBOOKS_DIR = PROJ_ROOT / "notebooks"
+
+# Valores por defecto del entry point `ingest` (deben coincidir con MLproject).
+INGEST_YEAR = int(START_DATE[:4])
+SOURCES_MANIFEST = REFERENCES_DIR / "mibici_sources_2025.csv"
+
+# Hiperparámetros por defecto del entry point `train` (deben coincidir con MLproject).
+# P1 y P2 comparten los de HistGradientBoosting; P3 elige k entre 2 y P3_MAX_K.
+HGB_PARAMS = {
+    "learning_rate": 0.1,
+    "max_iter": 100,
+    "max_leaf_nodes": 31,
+    "min_samples_leaf": 50,
+    "l2_regularization": 1.0,
+}
+P3_MAX_K = 8
+P3_N_INIT = 10
+
+# MLflow: experimento del equipo y alias del modelo en producción.
+MLFLOW_EXPERIMENT_NAME = os.getenv("MLFLOW_EXPERIMENT_NAME", "mibici-equipo28")
+CHAMPION_ALIAS = "champion"
 
 # If tqdm is installed, configure loguru with tqdm.write
 # https://github.com/Delgan/loguru/issues/135

@@ -9,6 +9,7 @@ lee registros desde noviembre de 2025 (test reservado).
     mlflow run . -e p1_train --env-manager local
     mlflow run . -e p2_train --env-manager local
     mlflow run . -e p3_train --env-manager local
+    mlflow run . -e train -P question=p1 -P learning_rate=0.05 --env-manager local
 """
 
 import hashlib
@@ -32,7 +33,14 @@ from sklearn.metrics import (
 import typer
 
 from mibici import clustering
-from mibici.config import EXTERNAL_DATA_DIR, PROCESSED_DATA_DIR, PROJ_ROOT, RANDOM_SEED
+from mibici.config import (
+    EXTERNAL_DATA_DIR,
+    HGB_PARAMS,
+    P3_MAX_K,
+    PROCESSED_DATA_DIR,
+    PROJ_ROOT,
+    RANDOM_SEED,
+)
 from mibici.features import REQUIRED_COLUMNS
 from mibici.modeling import p2_train
 from mibici.modeling.p2_catalog import AUDIT_FILENAME, CATALOG_FILENAME, load_catalog
@@ -62,6 +70,8 @@ HGB_TRUSTED_TYPES = ["sklearn.ensemble._hist_gradient_boosting.predictor.TreePre
 # La transformación logarítmica del pipeline de P3 es una función del proyecto.
 P3_TRUSTED_TYPES = ["mibici.clustering.log_transform"]
 P3_BASELINE_NAME = "baseline_activity_quantiles"
+P3_KMEANS_NAME = "kmeans"
+P1_CANDIDATE_NAME = "hist_gradient_boosting_poisson"
 
 # Nombres de run del contrato (sección 9 del handoff).
 P1_RUN_NAMES = {
@@ -92,6 +102,12 @@ P2_MODEL_PARAMS = {
         "model_class": "sklearn.ensemble.HistGradientBoostingClassifier",
         **p2_train.CANDIDATE_PARAMS,
     },
+}
+# Valores aceptados por el parámetro `model` del entry point `train`.
+TRAIN_MODELS = {
+    "p1": ("dummy_mean", "seasonal_weekly", P1_CANDIDATE_NAME),
+    "p2": (p2_train.BASELINE_NAME, p2_train.CANDIDATE_NAME),
+    "p3": (P3_BASELINE_NAME, P3_KMEANS_NAME),
 }
 P2_VALIDATION_METRICS = (
     "average_precision",
@@ -304,8 +320,17 @@ def precision_recall_figure(
     return figure
 
 
-def run_p1(hourly_path: Path = HOURLY_PATH) -> pd.DataFrame:
-    """Entrenar y evaluar P1 en train/validation y registrar un run por modelo."""
+def run_p1(
+    hourly_path: Path = HOURLY_PATH,
+    hgb_params: dict | None = None,
+    model: str = "all",
+) -> pd.DataFrame:
+    """Entrenar y evaluar P1 en train/validation y registrar un run por modelo.
+
+    ``hgb_params`` reemplaza hiperparámetros del candidato y ``model`` limita
+    los runs hijos a un solo modelo (``"all"`` registra todos).
+    """
+    candidate_params = {**CANDIDATE_PARAMS, **(hgb_params or {})}
     hourly_data = read_train_validation_hourly(hourly_path)
     data_version = calculate_data_version(hourly_data)
 
@@ -315,7 +340,7 @@ def run_p1(hourly_path: Path = HOURLY_PATH) -> pd.DataFrame:
 
     # Entrenar una sola vez para poder registrar el modelo evaluado.
     fit_start = perf_counter()
-    candidate = train_candidate_model(splits["train"])
+    candidate = train_candidate_model(splits["train"], candidate_params)
     fit_seconds = perf_counter() - fit_start
     candidate_metrics = evaluate_candidate(splits, model=candidate, fit_seconds=fit_seconds)
     metrics = pd.concat([baseline_metrics, candidate_metrics], ignore_index=True)
@@ -352,12 +377,14 @@ def run_p1(hourly_path: Path = HOURLY_PATH) -> pd.DataFrame:
                 "params": shared_params,
                 "predictor_columns": feature_columns,
                 "excluded_predictor_columns": ["station_id", "hour", "target_departures"],
-                "candidate_parameters": CANDIDATE_PARAMS,
+                "candidate_parameters": candidate_params,
             },
             "reports/p1_run_report.json",
         )
 
         for model_name, model_metrics in metrics.groupby("model", sort=False):
+            if model not in ("all", model_name):
+                continue
             by_split = model_metrics.set_index("evaluation_set")
             validation = by_split.loc["validation"]
             train = by_split.loc["train"]
@@ -368,6 +395,7 @@ def run_p1(hourly_path: Path = HOURLY_PATH) -> pd.DataFrame:
                     {
                         **shared_params,
                         **P1_MODEL_PARAMS[model_name],
+                        **(candidate_params if model_name == P1_CANDIDATE_NAME else {}),
                         "predictor_columns": predictors[model_name],
                     }
                 )
@@ -386,12 +414,12 @@ def run_p1(hourly_path: Path = HOURLY_PATH) -> pd.DataFrame:
                     }
                 )
 
-                model, model_columns = models[model_name]
+                estimator, model_columns = models[model_name]
                 model_input = cohort.loc[:, model_columns]
-                if model is seasonal:
+                if estimator is seasonal:
                     predictions = seasonal.predict(None, model_input)
                 else:
-                    predictions = model.predict(model_input)
+                    predictions = estimator.predict(model_input)
                 profile = hourly_profile_table(cohort, predictions)
                 mlflow.log_text(profile.to_csv(index=False), "evaluation/hourly_profile.csv")
                 mlflow.log_figure(
@@ -399,16 +427,16 @@ def run_p1(hourly_path: Path = HOURLY_PATH) -> pd.DataFrame:
                     "evaluation/hourly_profile.png",
                 )
 
-                if model is seasonal:
+                if estimator is seasonal:
                     mlflow.pyfunc.log_model(
                         name="model", python_model=seasonal, input_example=model_input.head(5)
                     )
                 else:
                     mlflow.sklearn.log_model(
-                        model,
+                        estimator,
                         name="model",
                         input_example=model_input.head(5),
-                        skops_trusted_types=HGB_TRUSTED_TYPES if model is candidate else None,
+                        skops_trusted_types=HGB_TRUSTED_TYPES if estimator is candidate else None,
                     )
 
     logger.success("Runs P1 registrados en MLflow.")
@@ -419,8 +447,15 @@ def run_p2(
     label_path: Path = p2_train.LABEL_DATA_PATH,
     hourly_path: Path = HOURLY_PATH,
     catalog_path: Path = EXTERNAL_DATA_DIR / CATALOG_FILENAME,
+    hgb_params: dict | None = None,
+    model: str = "all",
 ) -> pd.DataFrame:
-    """Reproducir etiquetas, entrenar P2 y registrar un run por objetivo y modelo."""
+    """Reproducir etiquetas, entrenar P2 y registrar un run por objetivo y modelo.
+
+    ``hgb_params`` reemplaza hiperparámetros del candidato y ``model`` limita
+    los runs hijos a un solo modelo (``"all"`` registra todos).
+    """
+    candidate_params = {**p2_train.CANDIDATE_PARAMS, **(hgb_params or {})}
     provenance = p2_train.verify_label_reproducibility(
         label_path=label_path,
         hourly_path=hourly_path,
@@ -440,7 +475,7 @@ def run_p2(
         ],
         filters=[[("partition", "==", "train")], [("partition", "==", "validation")]],
     )
-    experiment = p2_train.run_validation_experiment(labeled_data)
+    experiment = p2_train.run_validation_experiment(labeled_data, candidate_params)
     metrics = experiment.metrics
 
     # Mismas filas de validation que usó la evaluación, para las curvas PR.
@@ -474,7 +509,7 @@ def run_p2(
                 "data_provenance": provenance,
                 "tags": tags,
                 "params": shared_params,
-                "candidate_parameters": p2_train.CANDIDATE_PARAMS,
+                "candidate_parameters": candidate_params,
             },
             "reports/p2_run_report.json",
         )
@@ -483,9 +518,11 @@ def run_p2(
             mlflow.log_artifact(str(audit_path), artifact_path="reports")
 
         for row in metrics.to_dict(orient="records"):
+            if model not in ("all", row["model"]):
+                continue
             objective = experiment.models[row["target"]]
             is_candidate = row["model"] == p2_train.CANDIDATE_NAME
-            model = objective.candidate if is_candidate else objective.dummy
+            estimator = objective.candidate if is_candidate else objective.dummy
             title = f"{row['target_name']} · {row['model']}"
 
             with mlflow.start_run(
@@ -494,7 +531,13 @@ def run_p2(
                 mlflow.set_tags(
                     {**tags, "objective": row["target_name"], "model_name": row["model"]}
                 )
-                mlflow.log_params({**shared_params, **P2_MODEL_PARAMS[row["model"]]})
+                mlflow.log_params(
+                    {
+                        **shared_params,
+                        **P2_MODEL_PARAMS[row["model"]],
+                        **(candidate_params if is_candidate else {}),
+                    }
+                )
                 mlflow.log_input(dataset, context="training")
                 mlflow.log_metrics(
                     {
@@ -514,7 +557,7 @@ def run_p2(
                     "evaluation/confusion_matrix.png",
                 )
 
-                probabilities = p2_train._positive_probability(model, validation_features)
+                probabilities = p2_train._positive_probability(estimator, validation_features)
                 curve = precision_recall_table(
                     splits["validation"][row["target"]].to_numpy(),
                     probabilities,
@@ -528,7 +571,7 @@ def run_p2(
                 )
 
                 mlflow.sklearn.log_model(
-                    model,
+                    estimator,
                     name="model",
                     input_example=validation_features[:5],
                     skops_trusted_types=HGB_TRUSTED_TYPES if is_candidate else None,
@@ -588,13 +631,21 @@ def clustering_metrics(X_scaled: np.ndarray, labels: np.ndarray) -> dict[str, fl
 def run_p3(
     hourly_path: Path = HOURLY_PATH,
     catalog_path: Path = EXTERNAL_DATA_DIR / CATALOG_FILENAME,
+    k: int | None = None,
+    max_k: int = P3_MAX_K,
+    model: str = "all",
 ) -> pd.DataFrame:
-    """Agrupar estaciones con K-Means y registrar un run por modelo."""
+    """Agrupar estaciones con K-Means y registrar un run por modelo.
+
+    ``k`` fija la cantidad de grupos seleccionada (si no, se elige por
+    silhouette entre 2 y ``max_k``) y ``model`` limita los runs hijos al
+    baseline o a K-Means (``"all"`` registra ambos).
+    """
     hourly_data = read_train_validation_hourly(hourly_path)
     data_version = calculate_data_version(hourly_data)
 
     features = clustering.build_station_features(hourly_data)
-    result = clustering.fit_clusters(features)
+    result = clustering.fit_clusters(features, max_k, k)
     # Mismo espacio transformado y estandarizado para comparar todos los modelos.
     X_scaled = clustering.scaled_features(result.model, features)
 
@@ -613,15 +664,18 @@ def run_p3(
         "feature_columns": ",".join(feature_columns),
         "transform": "log1p (con signo en mean_net_flow) + StandardScaler",
         "k_range": f"2-{result.evaluation['k'].max()}",
-        "selection_metric": "silhouette_score",
+        "selection_metric": "silhouette_score" if k is None else "fixed_k",
     }
     dataset = mlflow.data.from_pandas(hourly_data, source=str(hourly_path), name=DATASET_NAME)
 
-    baseline = ActivityQuantileModel.fit(features["total_activity"], result.best_k)
-    candidates = {P3_BASELINE_NAME: (baseline, baseline.predict(None, features))}
-    for k in result.evaluation["k"]:
-        model = clustering.make_model(k)
-        candidates[f"kmeans_k{k}"] = (model, model.fit_predict(features))
+    candidates = {}
+    if model in ("all", P3_BASELINE_NAME):
+        baseline = ActivityQuantileModel.fit(features["total_activity"], result.best_k)
+        candidates[P3_BASELINE_NAME] = (baseline, baseline.predict(None, features))
+    if model in ("all", P3_KMEANS_NAME):
+        for n_clusters in result.evaluation["k"]:
+            kmeans = clustering.make_model(n_clusters)
+            candidates[f"kmeans_k{n_clusters}"] = (kmeans, kmeans.fit_predict(features))
 
     summary = []
     with mlflow.start_run():
@@ -639,7 +693,7 @@ def run_p3(
             clustering.silhouette_figure(result.evaluation), "evaluation/silhouette_by_k.png"
         )
 
-        for model_name, (model, labels) in candidates.items():
+        for model_name, (estimator, labels) in candidates.items():
             is_baseline = model_name == P3_BASELINE_NAME
             metrics = clustering_metrics(X_scaled, labels)
             title = f"{model_name} ({metrics['n_clusters']} grupos)"
@@ -665,7 +719,7 @@ def run_p3(
                 mlflow.log_input(dataset, context="training")
 
                 if not is_baseline:
-                    metrics["inertia"] = float(model[-1].inertia_)
+                    metrics["inertia"] = float(estimator[-1].inertia_)
                 mlflow.log_metrics(metrics)
 
                 mlflow.log_text(
@@ -687,11 +741,11 @@ def run_p3(
 
                 if is_baseline:
                     mlflow.pyfunc.log_model(
-                        name="model", python_model=model, input_example=features.head(5)
+                        name="model", python_model=estimator, input_example=features.head(5)
                     )
                 else:
                     mlflow.sklearn.log_model(
-                        model,
+                        estimator,
                         name="model",
                         input_example=features.head(5),
                         skops_trusted_types=P3_TRUSTED_TYPES,
@@ -729,6 +783,46 @@ def p3_command(
     """Registrar en MLflow el agrupamiento de estaciones P3 (enero-octubre)."""
     metrics = run_p3(hourly_path, catalog_path)
     logger.info(f"Métricas P3:\n{metrics.to_string(index=False)}")
+
+
+@app.command("train")
+def train_command(
+    question: str = typer.Option(..., help="Pregunta a entrenar: p1, p2 o p3."),
+    model: str = typer.Option("all", help="Modelo a registrar o 'all' para todos."),
+    learning_rate: float = HGB_PARAMS["learning_rate"],
+    max_iter: int = HGB_PARAMS["max_iter"],
+    max_leaf_nodes: int = HGB_PARAMS["max_leaf_nodes"],
+    min_samples_leaf: int = HGB_PARAMS["min_samples_leaf"],
+    l2_regularization: float = HGB_PARAMS["l2_regularization"],
+    k: int = typer.Option(0, help="Grupos de P3; 0 los elige por silhouette."),
+    max_k: int = P3_MAX_K,
+):
+    """Entrenar una pregunta con hiperparámetros elegidos y registrarla en MLflow.
+
+    Los hiperparámetros de HistGradientBoosting aplican a P1 y P2; ``k`` y
+    ``max_k`` aplican a P3. Los valores por defecto vienen de ``config.py``.
+    """
+    question = question.lower()
+    if question not in TRAIN_MODELS:
+        raise typer.BadParameter(f"Pregunta no reconocida: {question}. Usa p1, p2 o p3.")
+    if model not in ("all", *TRAIN_MODELS[question]):
+        options = ", ".join(("all", *TRAIN_MODELS[question]))
+        raise typer.BadParameter(f"Modelo no reconocido para {question}: {model}. Usa {options}.")
+
+    hgb_params = {
+        "learning_rate": learning_rate,
+        "max_iter": max_iter,
+        "max_leaf_nodes": max_leaf_nodes,
+        "min_samples_leaf": min_samples_leaf,
+        "l2_regularization": l2_regularization,
+    }
+    if question == "p1":
+        metrics = run_p1(hgb_params=hgb_params, model=model)
+    elif question == "p2":
+        metrics = run_p2(hgb_params=hgb_params, model=model)
+    else:
+        metrics = run_p3(k=k or None, max_k=max_k, model=model)
+    logger.info(f"Métricas {question.upper()}:\n{metrics.to_string(index=False)}")
 
 
 if __name__ == "__main__":
