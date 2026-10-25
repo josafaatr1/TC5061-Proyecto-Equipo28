@@ -102,3 +102,27 @@ def test_champion_moves_only_when_metric_improves(tracking_store):
     model = mlflow.pyfunc.load_model(f"models:/{P1_MODEL}@{CHAMPION_ALIAS}")
     assert len(model.predict(pd.DataFrame({"x": [0.0]}))) == 1
     assert summary.loc["mibici-p3-station-clusters", "status"] == "sin runs"
+
+
+def test_search_candidates_compete_with_baselines_for_champion(tracking_store):
+    """Los hijos de una búsqueda comparten model_name y el mejor candidato es champion."""
+    client, _ = tracking_store
+    p1_training(dummy_mae=2.0, candidate_mae=1.0)
+    candidate = {"model_name": "hist_gradient_boosting_poisson"}
+
+    search = log_training(
+        "P1",
+        {
+            "dummy_mean": {"tags": {}, "metrics": {"val_mae": 2.0}},
+            "search-lr0.05": {"tags": candidate, "metrics": {"val_mae": 1.2}},
+            "search-lr0.1": {"tags": candidate, "metrics": {"val_mae": 0.7}},
+            "search-lr0.2": {"tags": candidate, "metrics": {"val_mae": 0.9}},
+        },
+    )
+    summary = register_models("test").set_index("model")
+
+    assert summary.loc[P1_MODEL, "status"] == "nuevo champion"
+    champion = client.get_model_version_by_alias(P1_MODEL, CHAMPION_ALIAS)
+    assert champion.run_id == search["search-lr0.1"]
+    assert champion.tags["model_name"] == "hist_gradient_boosting_poisson"
+    assert float(champion.tags["selection_metric_value"]) == 0.7

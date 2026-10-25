@@ -5,18 +5,24 @@ import numpy as np
 import pandas as pd
 import pytest
 from tests.test_modeling import make_hourly_data
+from tests.test_p2_train import make_labeled_data
 import yaml
 
 from mibici import clustering, config
 from mibici.config import PROJ_ROOT
+from mibici.modeling import p2_train
 from mibici.modeling.mlflow_runs import (
+    MODEL_FAMILIES,
     P1_RUN_NAMES,
     ActivityQuantileModel,
     calculate_data_version,
     p2_run_name,
+    parse_search_grid,
     precision_recall_table,
     run_p1,
+    run_p2,
     run_p3,
+    search_suffix,
 )
 from mibici.modeling.train import (
     evaluate_candidate,
@@ -244,3 +250,151 @@ def test_mlproject_defaults_match_config():
     for name, value in config.HGB_PARAMS.items():
         assert train[name]["default"] == value
     assert train["max_k"]["default"] == config.P3_MAX_K
+
+    search = entry_points["search"]["parameters"]
+    assert "default" not in search["question"]
+    assert search["learning_rates"]["default"] == ",".join(map(str, config.SEARCH_LEARNING_RATES))
+    assert search["max_leaf_nodes"]["default"] == ",".join(map(str, config.SEARCH_MAX_LEAF_NODES))
+
+
+def test_parse_search_grid_builds_every_combination():
+    """La rejilla es el producto de learning_rate y max_leaf_nodes."""
+    grid = parse_search_grid("0.05,0.1", "15,31")
+
+    assert grid == [
+        {"learning_rate": 0.05, "max_leaf_nodes": 15},
+        {"learning_rate": 0.05, "max_leaf_nodes": 31},
+        {"learning_rate": 0.1, "max_leaf_nodes": 15},
+        {"learning_rate": 0.1, "max_leaf_nodes": 31},
+    ]
+    assert search_suffix(grid[0]) == "lr0.05-leaf15"
+    with pytest.raises(ValueError):
+        parse_search_grid("", "15")
+
+
+def children_of(client, experiment_id: str, parent_name: str):
+    """Run padre por nombre y sus hijos indexados por nombre de run."""
+    runs = client.search_runs([experiment_id])
+    parent = next(run for run in runs if run.info.run_name == parent_name)
+    children = {
+        run.info.run_name: run
+        for run in runs
+        if run.data.tags.get("mlflow.parentRunId") == parent.info.run_id
+    }
+    return parent, children
+
+
+def assert_candidate_artifacts(client, experiment_id: str, run, plots: set[str]):
+    """Cada run hijo guarda sus carpetas de artefactos y un modelo con firma."""
+    run_id = run.info.run_id
+    for folder, expected in {
+        "manifests": {
+            "manifests/data_manifest.json",
+            "manifests/mibici_sources_2025.csv",
+            "manifests/mibici_inventory_2025.csv",
+        },
+        "config": {"config/run_config.json"},
+        "evaluation": plots,
+    }.items():
+        assert expected <= {item.path for item in client.list_artifacts(run_id, folder)}
+
+    logged_models = client.search_logged_models(
+        [experiment_id], filter_string=f"source_run_id = '{run_id}'"
+    )
+    assert len(logged_models) == 1
+    loaded = mlflow.pyfunc.load_model(logged_models[0].model_uri)
+    assert loaded.metadata.signature is not None
+    assert loaded.metadata.saved_input_example_info is not None
+
+    tags = run.data.tags
+    assert tags["model_family"] == MODEL_FAMILIES[tags["model_name"]]
+    assert tags["stage_of_work"] in {"baseline", "search"}
+    assert len(tags["train_validation_data_version"]) == 64
+
+
+def test_run_p1_search_logs_one_child_per_combination(tmp_path: Path, tracking_store):
+    """La búsqueda de P1 registra baselines y un candidato hijo por combinación."""
+    client, experiment_id = tracking_store
+    hourly_path = tmp_path / "hourly.parquet"
+    make_train_validation_hourly().to_parquet(hourly_path)
+    grid = [{**combo, "max_iter": 10} for combo in parse_search_grid("0.05,0.2", "15,31")]
+
+    run_p1(hourly_path, search_grid=grid)
+
+    parent, children = children_of(client, experiment_id, "P1-search")
+    candidates = {
+        f"P1-regression-search-lr{rate}-leaf{leaf}" for rate in (0.05, 0.2) for leaf in (15, 31)
+    }
+    assert set(children) == candidates | {
+        P1_RUN_NAMES["dummy_mean"],
+        P1_RUN_NAMES["seasonal_weekly"],
+    }
+    assert parent.data.tags["stage_of_work"] == "search"
+    assert parent.data.tags["question"] == "P1"
+    assert parent.data.tags["selected_run_departures"] in candidates
+    assert {"reports/selection_summary.json", "reports/p1_model_comparison.csv"} <= {
+        item.path for item in client.list_artifacts(parent.info.run_id, "reports")
+    }
+
+    for name, run in children.items():
+        assert run.data.tags["stage_of_work"] == ("search" if name in candidates else "baseline")
+        assert {"val_mae", "val_rmse", "fit_seconds"} <= set(run.data.metrics)
+        assert_candidate_artifacts(
+            client,
+            experiment_id,
+            run,
+            {"evaluation/hourly_profile.csv", "evaluation/hourly_profile.png"},
+        )
+    assert children["P1-regression-search-lr0.05-leaf15"].data.params["max_iter"] == "10"
+
+
+def test_run_p2_search_logs_candidates_for_each_objective(
+    tmp_path: Path, tracking_store, monkeypatch
+):
+    """La búsqueda de P2 registra baselines y candidatos por combinación y objetivo."""
+    client, experiment_id = tracking_store
+    hourly_path = tmp_path / "hourly.parquet"
+    make_train_validation_hourly().to_parquet(hourly_path)
+    label_path = tmp_path / "labels.parquet"
+    make_labeled_data(include_test=False).to_parquet(label_path)
+    provenance = {
+        "catalog_version": "2026-09",
+        "catalog_sha256": "a" * 64,
+        "label_artifact_sha256": "b" * 64,
+        "labels_reproduced_exactly": True,
+        "label_pressure_quantile": 0.9,
+        "label_pressure_thresholds_train_only": {
+            "bike_pressure_ratio": 0.3,
+            "dock_pressure_ratio": 0.3,
+        },
+    }
+    monkeypatch.setattr(p2_train, "verify_label_reproducibility", lambda **_: provenance)
+    grid = [{**combo, "max_iter": 10} for combo in parse_search_grid("0.05,0.2", "15")]
+
+    run_p2(label_path, hourly_path, tmp_path / "catalog.csv", search_grid=grid)
+
+    parent, children = children_of(client, experiment_id, "P2-search")
+    objectives = ("bike-pressure", "dock-pressure")
+    candidates = {
+        f"P2-{objective}-search-lr{rate}-leaf15" for objective in objectives for rate in (0.05, 0.2)
+    }
+    baselines = {f"P2-{objective}-dummy-prior" for objective in objectives}
+    assert set(children) == candidates | baselines
+    assert parent.data.tags["stage_of_work"] == "search"
+    assert parent.data.tags["selected_run_bike_pressure"] in candidates
+    assert parent.data.tags["selected_run_dock_pressure"] in candidates
+
+    for name, run in children.items():
+        assert run.data.tags["stage_of_work"] == ("search" if name in candidates else "baseline")
+        assert run.data.tags["objective"] in {"bike_pressure", "dock_pressure"}
+        assert {"val_average_precision", "val_recall", "val_f1"} <= set(run.data.metrics)
+        assert_candidate_artifacts(
+            client,
+            experiment_id,
+            run,
+            {
+                "evaluation/confusion_matrix.png",
+                "evaluation/precision_recall.png",
+                "evaluation/precision_recall.csv",
+            },
+        )

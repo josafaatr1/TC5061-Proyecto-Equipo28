@@ -71,21 +71,26 @@ Asimismo, las horas sin viajes no garantizan que una estación estuviera operati
 ```text
 TC5061-Proyecto-Equipo28/
 ├── data/                 # Datos originales, intermedios y procesados
-├── docs/                 # Documentación adicional
+├── docs/                 # Reporte de la segunda entrega (resultados, selección y evidencias)
 ├── mibici/               # Código fuente del proyecto
+│   ├── clustering.py     # Agrupamiento de estaciones (P3)
 │   ├── config.py         # Configuración centralizada
 │   ├── dataset.py        # Ingesta y preparación de datos
 │   ├── features.py       # Ingeniería de características
-│   ├── modeling/         # Entrenamiento y predicción
-│   └── plots.py          # Visualizaciones
+│   ├── tracking.py       # Registro del pipeline de datos en MLflow
+│   ├── workflow.py       # Encadena los entry points bajo un run padre
+│   └── modeling/         # Modelos P1 y P2, runs de MLflow, búsqueda y Model Registry
 ├── models/               # Modelos generados localmente
 ├── notebooks/            # Exploración de datos
-├── references/           # ML Canvas y arquitectura
+├── references/           # Manifiestos de datos, handoff P1/P2 y auditoría del catálogo
 ├── reports/
 │   └── figures/          # Figuras y visualizaciones
 ├── tests/                # Pruebas del código
 ├── .gitignore            # Exclusiones de Git
+├── Makefile              # Atajos para los entry points de MLflow
+├── MLproject             # Entry points de MLflow Projects
 ├── pyproject.toml        # Configuración del paquete
+├── python_env.yaml       # Entorno de MLflow Projects
 ├── requirements.txt      # Dependencias directas
 └── requirements-lock.txt # Versiones del entorno
 ```
@@ -148,6 +153,8 @@ export MLFLOW_EXPERIMENT_NAME=mibici-equipo28   # si no, los runs caen en "Defau
 export MLFLOW_TRACKING_URI=http://127.0.0.1:5000 # servidor de la sección 7.2
 ```
 
+En Windows (PowerShell) usa `$env:NOMBRE="valor"` y define también `$env:PYTHONUTF8=1`: sin él, `mlflow run` falla con `UnicodeEncodeError` si rediriges la salida a un archivo o la canalizas.
+
 ### 7.2. Levantar el servidor de tracking
 
 El Model Registry necesita un backend con base de datos. En una terminal aparte, con el ambiente activado, levanta el servidor de MLflow con un backend sqlite:
@@ -190,6 +197,7 @@ mlflow run . -e ingest -P year=2025 -P manifest_path=references/mibici_sources_2
 | `p2_train` | `mlflow run . -e p2_train --env-manager local` | `make mlflow-p2` | Verifica las etiquetas y entrena y valida los clasificadores P2 |
 | `p3_train` | `mlflow run . -e p3_train --env-manager local` | `make mlflow-p3` | Agrupa las estaciones por perfil de uso con K-Means y un baseline por cuantiles |
 | `train` | `mlflow run . -e train -P question=p1 --env-manager local` | `make mlflow-train QUESTION=p1` | Entrena una pregunta con el modelo e hiperparámetros elegidos (sección 7.5) |
+| `search` | `mlflow run . -e search -P question=p1 --env-manager local` | `make mlflow-search QUESTION=p1` | Busca hiperparámetros de P1 o P2: un run padre con los baselines y un hijo por combinación (sección 7.5) |
 | `register` | `mlflow run . -e register --env-manager local` | `make mlflow-register` | Registra los mejores modelos en el Model Registry y actualiza el alias `champion` (sección 7.7) |
 | `workflow` | `mlflow run . -e workflow --env-manager local` | `make mlflow-workflow` | Encadena `ingest`, los pasos de P1, P2 y P3 y `register` como runs hijos de un run padre |
 
@@ -217,6 +225,21 @@ mlflow run . -e train -P question=p3 -P k=4 --env-manager local
 ```
 
 P2 requiere haber corrido antes `p2_catalog` y `p2_targets`.
+
+**Búsqueda de hiperparámetros.** El entry point `search` reutiliza el entrenamiento de P1 o P2 y evalúa cada combinación de `learning_rates` y `max_leaf_nodes` de HistGradientBoosting con la misma partición temporal (entrenamiento de enero a agosto, validation de septiembre y octubre). Sus valores por defecto vienen de `SEARCH_LEARNING_RATES` y `SEARCH_MAX_LEAF_NODES` en `mibici/config.py`:
+
+| Parámetro | Por defecto | Qué hace |
+|---|---|---|
+| `question` | (obligatorio) | `p1` o `p2` |
+| `learning_rates` | `0.05,0.1,0.2` | Valores de `learning_rate`, separados por comas |
+| `max_leaf_nodes` | `15,31,63` | Valores de `max_leaf_nodes`, separados por comas |
+
+```bash
+mlflow run . -e search -P question=p1 --env-manager local
+mlflow run . -e search -P question=p2 -P learning_rates=0.05,0.1 --env-manager local
+```
+
+El run padre se llama `P1-search` o `P2-search`. Sus hijos son los baselines y un candidato por combinación (`P1-regression-search-lr0.05-leaf15`; en P2, `P2-bike-pressure-search-lr0.05-leaf15` y su equivalente `dock-pressure`). El padre guarda `reports/selection_summary.json` con el mejor candidato frente al mejor baseline y los tags `selected_run_*`. Como `register` toma el entrenamiento más reciente de cada pregunta, la búsqueda corrida al final define el champion.
 
 ### 7.6. Ver los resultados
 
@@ -246,9 +269,9 @@ Cada run hijo registra:
 | Tipo | Qué se registra |
 |---|---|
 | Parámetros | Clase e hiperparámetros del modelo, `random_state`, columnas predictoras, periodos y tamaños de train/validation; en P2, también los umbrales proxy y el umbral de clasificación; en P3, el periodo de datos, el número de estaciones, los indicadores y su transformación |
-| Tags | Pregunta, objetivo, equipo, commit de Git, versiones de Python y scikit-learn y `train_validation_data_version` (huella del dataset horario de enero a octubre); en P2, también la versión y el hash del catálogo y el hash de las etiquetas |
+| Tags | Pregunta, objetivo, equipo, commit de Git, versiones de Python y scikit-learn y `train_validation_data_version` (huella del dataset horario de enero a octubre); en P2, también la versión y el hash del catálogo y el hash de las etiquetas; en P1 y P2, `model_family` y `stage_of_work` (`baseline`, `training` o `search`) |
 | Métricas | Prefijo `val_`: `val_mae` y `val_rmse` en P1; `val_average_precision`, `val_precision`, `val_recall`, `val_f1`, prevalencia y celdas de la matriz de confusión en P2. En P3 (sin partición de validación): `silhouette_score`, `davies_bouldin_score`, `calinski_harabasz_score`, tamaño de los grupos e `inertia` |
-| Artefactos | Modelo registrado (baselines y candidatos); en `evaluation/`, el perfil horario real contra predicho en P1; la matriz de confusión y la curva Precision-Recall en P2; y la asignación de estaciones, los perfiles por grupo, la proyección PCA y el mapa de grupos en P3 |
+| Artefactos | Modelo registrado (baselines y candidatos) con su firma y ejemplo de entrada en P1 y P2; en `evaluation/`, el perfil horario real contra predicho en P1; la matriz de confusión y la curva Precision-Recall en P2; y la asignación de estaciones, los perfiles por grupo, la proyección PCA y el mapa de grupos en P3. En P1 y P2 también `manifests/` (procedencia de los datos y manifiestos de fuentes e inventario) y `config/run_config.json` |
 
 El run padre guarda la tabla comparativa de los modelos y un reporte JSON con los parámetros y la procedencia de los datos en `reports/`.
 
@@ -335,9 +358,7 @@ La implementación cuenta con 24 pruebas aprobadas, que verifican la lectura, va
 
 ### 8.6. Experimentación
 
-Los modelos de regresión, clasificación y clustering se desarrollan de forma independiente por los integrantes del equipo.
-
-Se utilizará MLflow para registrar los experimentos bajo el nombre previsto `mibici-equipo28`.
+Los modelos de regresión, clasificación y clustering se ejecutan mediante MLflow Projects y se registran en el experimento `mibici-equipo28` (sección 7). La búsqueda de hiperparámetros de P1 y P2 y la selección del mejor modelo están en [docs/entrega2_mlflow.md](docs/entrega2_mlflow.md).
 
 ## 9. Flujo de colaboración
 
@@ -376,9 +397,7 @@ chore: initialize MiBici project structure
 
 ## 11. Documentación
 
-Los documentos de formulación del problema y diseño de arquitectura se almacenarán en `references/`.
-
-La documentación se ampliará conforme avance el desarrollo del proyecto integrador.
+Los documentos de formulación del problema y diseño de datos están en `references/`. El reporte de la segunda entrega (resultados, selección del mejor modelo, reproducción y evidencias) está en [docs/entrega2_mlflow.md](docs/entrega2_mlflow.md).
 
 
 ## 12. Estado del proyecto
@@ -389,8 +408,8 @@ La documentación se ampliará conforme avance el desarrollo del proyecto integr
 
 **Pipeline reproducible:** Implementado mediante cuatro comandos CLI para descarga, preparación, agregación y ejecución integral.
 
-**Modelado:** Los modelos de regresión, clasificación y clustering se encuentran en desarrollo por los integrantes responsables.
+**Modelado:** P1 y P2 tienen baselines y una búsqueda de hiperparámetros de HistGradientBoosting (9 combinaciones) evaluada en validation; P3 tiene K-Means y un baseline por cuantiles. El test (noviembre y diciembre de 2025) no se ha evaluado.
 
-**MLOps:** Integración de experimentos y seguimiento mediante MLflow en desarrollo.
+**MLOps:** Los entry points de MLflow Projects (`ingest`, `train`, `search`, `register`, entre otros) se ejecutan contra un servidor con SQLite. Los modelos mejores de P1, P2 (uno por objetivo) y P3 están en el Model Registry con el alias `champion`.
 
-**Documentación:** Fuentes de datos y pipeline documentados. Pendiente integrar la arquitectura, los resultados de modelado y la evaluación final.
+**Documentación:** Fuentes de datos, pipeline, resultados de la búsqueda, selección del mejor modelo y evidencias en [docs/entrega2_mlflow.md](docs/entrega2_mlflow.md). Pendiente integrar la arquitectura y la evaluación final en test.

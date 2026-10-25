@@ -209,11 +209,14 @@ mlflow.db
 *.pkl
 *.pickle
 *.joblib
+*.skops
 *.h5
 *.keras
 *.onnx
 *.pt
 *.pth
+models/*
+!models/.gitkeep
 
 # Credenciales y variables de entorno
 .env.*

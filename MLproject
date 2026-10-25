@@ -5,10 +5,12 @@ python_env: python_env.yaml
 entry_points:
   # Fase 2: ingesta reproducible y trazable.
   # Valores por defecto tomados de mibici/config.py (INGEST_YEAR, SOURCES_MANIFEST).
+  # manifest_path es string (relativo al proyecto): con type path MLflow lo vuelve absoluto
+  # y en Windows falla si la ruta del proyecto tiene espacios.
   ingest:
     parameters:
       year: {type: int, default: 2025}
-      manifest_path: {type: path, default: references/mibici_sources_2025.csv}
+      manifest_path: {type: string, default: references/mibici_sources_2025.csv}
     command: "python -m mibici.dataset run-pipeline --year {year} --manifest-path {manifest_path}"
 
   workflow:
@@ -51,6 +53,18 @@ entry_points:
       --learning-rate {learning_rate} --max-iter {max_iter}
       --max-leaf-nodes {max_leaf_nodes} --min-samples-leaf {min_samples_leaf}
       --l2-regularization {l2_regularization} --k {k} --max-k {max_k}
+
+  # Búsqueda de hiperparámetros de P1 o P2: un run padre (P*-search) con los baselines
+  # y un hijo por combinación. Valores por defecto de SEARCH_* en mibici/config.py.
+  search:
+    parameters:
+      question: {type: string}
+      learning_rates: {type: string, default: "0.05,0.1,0.2"}
+      max_leaf_nodes: {type: string, default: "15,31,63"}
+    command: >-
+      python -m mibici.modeling.mlflow_runs search
+      --question {question} --learning-rates {learning_rates}
+      --max-leaf-nodes {max_leaf_nodes}
 
   # Model Registry: registra el mejor modelo del último entrenamiento de cada
   # pregunta y mueve el alias "champion" solo si mejora su métrica de validación.
