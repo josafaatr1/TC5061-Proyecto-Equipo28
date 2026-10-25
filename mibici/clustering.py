@@ -21,6 +21,8 @@ from sklearn.preprocessing import FunctionTransformer, StandardScaler
 
 from mibici.config import (
     FIGURES_DIR,
+    P3_MAX_K,
+    P3_N_INIT,
     PROCESSED_DATA_DIR,
     RANDOM_SEED,
     REPORTS_DIR,
@@ -31,8 +33,8 @@ INPUT_PATH = PROCESSED_DATA_DIR / "station_hourly_2025_complete.parquet"
 OUTPUT_DIR = REPORTS_DIR / "clustering"
 REQUIRED_COLUMNS = {"station_id", "hour", "departures", "arrivals", "net_flow", "total_activity"}
 SIGNED_COLUMNS = ("mean_net_flow",)
-MAX_K = 8
-N_INIT = 10
+MAX_K = P3_MAX_K
+N_INIT = P3_N_INIT
 
 
 @dataclass(frozen=True)
@@ -159,10 +161,19 @@ def evaluate_k(features: pd.DataFrame, max_k: int = MAX_K) -> pd.DataFrame:
     return pd.DataFrame(results)
 
 
-def fit_clusters(features: pd.DataFrame, max_k: int = MAX_K) -> ClusteringResult:
-    """Elegir k por silhouette y ajustar el modelo final."""
+def fit_clusters(
+    features: pd.DataFrame,
+    max_k: int = MAX_K,
+    k: int | None = None,
+) -> ClusteringResult:
+    """Elegir k por silhouette (o usar ``k`` fijo) y ajustar el modelo final."""
     evaluation = evaluate_k(features, max_k)
-    best_k = int(evaluation.loc[evaluation["silhouette_score"].idxmax(), "k"])
+    if k is None:
+        best_k = int(evaluation.loc[evaluation["silhouette_score"].idxmax(), "k"])
+    elif k in set(evaluation["k"]):
+        best_k = k
+    else:
+        raise ValueError(f"k={k} debe estar entre 2 y {evaluation['k'].max()}.")
     logger.info(f"Cantidad de grupos seleccionada: {best_k}")
 
     model = make_model(best_k)

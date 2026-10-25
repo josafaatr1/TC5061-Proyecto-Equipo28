@@ -27,6 +27,7 @@ import typer
 
 from mibici.config import (
     EXTERNAL_DATA_DIR,
+    HGB_PARAMS,
     PROCESSED_DATA_DIR,
     RANDOM_SEED,
     START_DATE,
@@ -67,11 +68,7 @@ BASELINE_NAME = "dummy_prior"
 CANDIDATE_NAME = "hist_gradient_boosting_balanced"
 CANDIDATE_PARAMS = {
     "loss": "log_loss",
-    "learning_rate": 0.1,
-    "max_iter": 100,
-    "max_leaf_nodes": 31,
-    "min_samples_leaf": 50,
-    "l2_regularization": 1.0,
+    **HGB_PARAMS,
     "class_weight": "balanced",
     "early_stopping": False,
     "random_state": RANDOM_SEED,
@@ -213,8 +210,12 @@ def train_objective(
     training_data: pd.DataFrame,
     target_column: str,
     training_features: np.ndarray | None = None,
+    candidate_params: dict | None = None,
 ) -> TrainedObjective:
-    """Ajustar Dummy y HGB usando solo filas train y pesos balanceados de train."""
+    """Ajustar Dummy y HGB usando solo filas train y pesos balanceados de train.
+
+    ``candidate_params`` reemplaza los hiperparámetros de ``CANDIDATE_PARAMS``.
+    """
     if training_data.empty:
         raise ValueError("No se puede entrenar sin observaciones train.")
     if target_column not in TARGET_COLUMNS:
@@ -232,7 +233,7 @@ def train_objective(
     dummy.fit(training_features, y_train)
     dummy_fit_seconds = time.perf_counter() - start
 
-    candidate = HistGradientBoostingClassifier(**CANDIDATE_PARAMS)
+    candidate = HistGradientBoostingClassifier(**(candidate_params or CANDIDATE_PARAMS))
     start = time.perf_counter()
     candidate.fit(training_features, y_train)
     candidate_fit_seconds = time.perf_counter() - start
@@ -351,7 +352,10 @@ def evaluate_objective(
     return results
 
 
-def run_validation_experiment(labeled_data: pd.DataFrame) -> ValidationRun:
+def run_validation_experiment(
+    labeled_data: pd.DataFrame,
+    candidate_params: dict | None = None,
+) -> ValidationRun:
     """Entrenar dos tareas independientes y evaluar solo validation."""
     splits = prepare_p2_splits(labeled_data)
     train_data = splits["train"]
@@ -366,6 +370,7 @@ def run_validation_experiment(labeled_data: pd.DataFrame) -> ValidationRun:
             train_data,
             target_column,
             training_features=training_features,
+            candidate_params=candidate_params,
         )
         models[target_column] = objective_models
         metrics.extend(

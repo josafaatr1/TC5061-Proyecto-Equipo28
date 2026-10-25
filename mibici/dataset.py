@@ -10,10 +10,11 @@ import requests
 import typer
 
 from mibici.config import (
+    INGEST_YEAR,
     INTERIM_DATA_DIR,
     PROCESSED_DATA_DIR,
-    PROJ_ROOT,
     RAW_DATA_DIR,
+    SOURCES_MANIFEST,
 )
 from mibici.tracking import log_pipeline_run
 
@@ -408,7 +409,7 @@ def complete_station_hourly(
 
 
 def build_annual_hourly_dataset(
-    year: int = 2025,
+    year: int = INGEST_YEAR,
 ) -> tuple[Path, Path]:
 
     """Construir datasets horarios observados y completados de un año."""
@@ -657,7 +658,7 @@ def download_year(
     return pd.DataFrame(results)
 
 
-def prepare_year(year: int = 2025) -> list[Path]:
+def prepare_year(year: int = INGEST_YEAR) -> list[Path]:
     """Preparar los doce archivos mensuales de viajes de MiBici."""
     output_paths = []
 
@@ -695,8 +696,8 @@ def prepare_year(year: int = 2025) -> list[Path]:
     return output_paths
 
 def run_pipeline(
-    year: int = 2025,
-    manifest_path: Path = PROJ_ROOT / "references/mibici_sources_2025.csv",
+    year: int = INGEST_YEAR,
+    manifest_path: Path = SOURCES_MANIFEST,
 ) -> tuple[Path, Path]:
     """Ejecutar la descarga, preparación y agregación anual."""
     if year != 2025:
@@ -733,7 +734,7 @@ def run_pipeline(
 
 @app.command("download-year")
 def download_year_command(
-    manifest_path: Path = PROJ_ROOT / "references/mibici_sources_2025.csv",
+    manifest_path: Path = SOURCES_MANIFEST,
 ):
     """Descargar los archivos mensuales de MiBici 2025."""
     inventory = download_year(manifest_path)
@@ -745,7 +746,7 @@ def download_year_command(
 
 @app.command("build-hourly")
 def build_hourly_command(
-    year: int = 2025,
+    year: int = INGEST_YEAR,
 ):
     """Generar los datasets horarios observados y completados."""
     observed_path, completed_path = build_annual_hourly_dataset(year)
@@ -754,7 +755,7 @@ def build_hourly_command(
     logger.success(f"Dataset completo: {completed_path}")
 
 @app.command("prepare-year")
-def prepare_year_command(year: int = 2025):
+def prepare_year_command(year: int = INGEST_YEAR):
     """Estandarizar los CSV mensuales y generar archivos Parquet."""
     output_paths = prepare_year(year)
 
@@ -765,10 +766,8 @@ def prepare_year_command(year: int = 2025):
 
 @app.command("run-pipeline")
 def run_pipeline_command(
-    year: int = 2025,
-    manifest_path: Path = (
-        PROJ_ROOT / "references/mibici_sources_2025.csv"
-    ),
+    year: int = INGEST_YEAR,
+    manifest_path: Path = SOURCES_MANIFEST,
 ):
     """Ejecutar el pipeline completo de MiBici 2025."""
     # Sin argumentos reutiliza el run abierto por `mlflow run` (o crea uno).

@@ -1,7 +1,8 @@
 """Workflow de MLflow: encadena los pasos del proyecto bajo un run padre.
 
 Ejecuta la ingeniería de datos, los modelos P1, la preparación y los modelos
-P2 y el agrupamiento P3. Los pasos de modelado leen solo enero-octubre.
+P2 y el agrupamiento P3, y al final registra los mejores modelos en el Model
+Registry. Los pasos de modelado leen solo enero-octubre.
 
     mlflow run . -e workflow --env-manager local
 """
@@ -13,7 +14,15 @@ from mlflow.tracking import MlflowClient
 ENV_MANAGER = "local"  # Reutilizar el ambiente actual en cada paso.
 
 # Orden de ejecución: cada paso consume los archivos que genera el anterior.
-STEPS = ("ingest", "p1_train", "p2_catalog", "p2_targets", "p2_train", "p3_train")
+STEPS = (
+    "ingest",
+    "p1_train",
+    "p2_catalog",
+    "p2_targets",
+    "p2_train",
+    "p3_train",
+    "register",
+)
 
 
 def main():

@@ -145,9 +145,22 @@ En cada terminal nueva, activa el ambiente de la sección 6 y elige el experimen
 ```bash
 source .venv/bin/activate
 export MLFLOW_EXPERIMENT_NAME=mibici-equipo28   # si no, los runs caen en "Default"
+export MLFLOW_TRACKING_URI=http://127.0.0.1:5000 # servidor de la sección 7.2
 ```
 
-### 7.2. Correr el proyecto
+### 7.2. Levantar el servidor de tracking
+
+El Model Registry necesita un backend con base de datos. En una terminal aparte, con el ambiente activado, levanta el servidor de MLflow con un backend sqlite:
+
+```bash
+mlflow server --backend-store-uri sqlite:///mlflow.db --artifacts-destination ./mlartifacts --host 127.0.0.1 --port 5000
+```
+
+También puedes usar `make mlflow-server`. Deja esa terminal abierta mientras trabajas: los runs, los modelos registrados y sus artefactos se guardan en `mlflow.db` y `mlartifacts/`, y la UI queda disponible en http://127.0.0.1:5000.
+
+Con `MLFLOW_TRACKING_URI` definido (sección 7.1), todos los comandos `mlflow run` y `make mlflow-*` registran en ese servidor. Si no lo defines, MLflow usa `mlflow.db` local directamente.
+
+### 7.3. Correr el proyecto
 
 ```bash
 mlflow run . -e ingest --env-manager local
@@ -160,7 +173,13 @@ Al final debe decir `=== Run (ID '...') succeeded ===`.
 
 Requiere conexión a Internet para descargar los archivos que aún no estén disponibles localmente.
 
-### 7.3. Entry points disponibles
+`ingest` acepta los parámetros `year` y `manifest_path`, cuyos valores por defecto (`2025` y `references/mibici_sources_2025.csv`) vienen de `INGEST_YEAR` y `SOURCES_MANIFEST` en `mibici/config.py`:
+
+```bash
+mlflow run . -e ingest -P year=2025 -P manifest_path=references/mibici_sources_2025.csv --env-manager local
+```
+
+### 7.4. Entry points disponibles
 
 | Entry point | Comando | Con `make` | Qué hace |
 |---|---|---|---|
@@ -170,21 +189,38 @@ Requiere conexión a Internet para descargar los archivos que aún no estén dis
 | `p2_targets` | `mlflow run . -e p2_targets --env-manager local` | `make mlflow-p2` | Construye las etiquetas proxy de P2 para train y validation |
 | `p2_train` | `mlflow run . -e p2_train --env-manager local` | `make mlflow-p2` | Verifica las etiquetas y entrena y valida los clasificadores P2 |
 | `p3_train` | `mlflow run . -e p3_train --env-manager local` | `make mlflow-p3` | Agrupa las estaciones por perfil de uso con K-Means y un baseline por cuantiles |
-| `workflow` | `mlflow run . -e workflow --env-manager local` | `make mlflow-workflow` | Encadena todos los pasos anteriores como runs hijos de un run padre |
+| `train` | `mlflow run . -e train -P question=p1 --env-manager local` | `make mlflow-train QUESTION=p1` | Entrena una pregunta con el modelo e hiperparámetros elegidos (sección 7.5) |
+| `register` | `mlflow run . -e register --env-manager local` | `make mlflow-register` | Registra los mejores modelos en el Model Registry y actualiza el alias `champion` (sección 7.7) |
+| `workflow` | `mlflow run . -e workflow --env-manager local` | `make mlflow-workflow` | Encadena `ingest`, los pasos de P1, P2 y P3 y `register` como runs hijos de un run padre |
 
 Cada paso usa los archivos que genera el anterior: P1, P2 y P3 leen el dataset horario de `ingest`, y `p2_train` necesita el catálogo y las etiquetas de `p2_catalog` y `p2_targets`. `p3_train` usa el catálogo para dibujar el mapa de grupos; si no está descargado, omite el mapa. `make mlflow-p2` ejecuta los tres pasos de P2 en orden. `p2_catalog` requiere conexión a Internet.
 
 Los pasos de modelado solo leen datos de enero a octubre de 2025 (train y validation); noviembre y diciembre quedan reservados como test y ningún paso calcula métricas sobre ellos.
 
-Los comandos de `make` ya definen `MLFLOW_EXPERIMENT_NAME=mibici-equipo28`, por lo que no hace falta el `export` de la sección 7.1.
+Los comandos de `make` ya definen `MLFLOW_EXPERIMENT_NAME=mibici-equipo28`, por lo que no hace falta ese `export` de la sección 7.1; `MLFLOW_TRACKING_URI` sí debe exportarse para usar el servidor.
 
-### 7.4. Ver los resultados
+### 7.5. Entrenar con parámetros
+
+El entry point `train` entrena una pregunta (`question`: `p1`, `p2` o `p3`) y registra sus runs igual que `p1_train`, `p2_train` y `p3_train`. Sus valores por defecto vienen de `HGB_PARAMS` y `P3_MAX_K` en `mibici/config.py`:
+
+| Parámetro | Por defecto | Aplica a | Qué hace |
+|---|---|---|---|
+| `question` | (obligatorio) | Todas | Pregunta a entrenar: `p1`, `p2` o `p3` |
+| `model` | `all` | Todas | Modelo a registrar: `all`, o uno de `dummy_mean`, `seasonal_weekly`, `hist_gradient_boosting_poisson` (P1); `dummy_prior`, `hist_gradient_boosting_balanced` (P2); `baseline_activity_quantiles`, `kmeans` (P3) |
+| `learning_rate`, `max_iter`, `max_leaf_nodes`, `min_samples_leaf`, `l2_regularization` | `0.1`, `100`, `31`, `50`, `1.0` | P1 y P2 | Hiperparámetros de HistGradientBoosting |
+| `k` | `0` | P3 | Cantidad de grupos seleccionada; `0` la elige por silhouette |
+| `max_k` | `8` | P3 | Mayor k evaluado |
 
 ```bash
-mlflow ui
+mlflow run . -e train -P question=p1 -P learning_rate=0.05 -P max_iter=200 --env-manager local
+mlflow run . -e train -P question=p3 -P k=4 --env-manager local
 ```
 
-Abre http://127.0.0.1:5000 y selecciona el experimento `mibici-equipo28` para revisar los runs, sus parámetros y artefactos.
+P2 requiere haber corrido antes `p2_catalog` y `p2_targets`.
+
+### 7.6. Ver los resultados
+
+Con el servidor de la sección 7.2 corriendo, abre http://127.0.0.1:5000. Si no usas el servidor, ejecuta `mlflow ui` y abre la misma dirección. Selecciona el experimento `mibici-equipo28` para revisar los runs, sus parámetros y artefactos.
 
 No hace falta tener la UI abierta mientras corres los runs: puedes abrirla después.
 
@@ -217,6 +253,29 @@ Cada run hijo registra:
 El run padre guarda la tabla comparativa de los modelos y un reporte JSON con los parámetros y la procedencia de los datos en `reports/`.
 
 `mlflow.db`, `mlruns/` y `mlartifacts/` se crean solos al correr y están excluidos de Git.
+
+### 7.7. Model Registry y alias `champion`
+
+El entry point `register` publica en el Model Registry un modelo por pregunta (dos en P2, uno por objetivo):
+
+| Modelo registrado | Runs que compara | Métrica de selección |
+|---|---|---|
+| `mibici-p1-departures` | Hijos del último run `P1-regression` | `val_mae` (menor es mejor) |
+| `mibici-p2-bike-pressure` | Hijos `bike_pressure` del último run `P2-classification` | `val_average_precision` (mayor es mejor) |
+| `mibici-p2-dock-pressure` | Hijos `dock_pressure` del último run `P2-classification` | `val_average_precision` (mayor es mejor) |
+| `mibici-p3-station-clusters` | Hijo con `selected=True` del último run `P3-clustering` | `silhouette_score` (mayor es mejor) |
+
+Para cada modelo, `register` toma el mejor run hijo del entrenamiento más reciente de su pregunta y lo registra como una versión nueva, con tags de la métrica, la versión de datos y el commit. El alias `champion` (el modelo en producción) solo se mueve a esa versión si mejora la métrica del champion actual; si no, la versión queda registrada sin alias. Volver a correr `register` sin entrenar de nuevo no crea versiones duplicadas.
+
+El flujo es: entrenar (`train` o `workflow`), correr `register` y revisar en la pestaña **Models** de la UI qué versión tiene el alias. `workflow` ya ejecuta `register` como último paso.
+
+Para cargar el modelo en producción desde Python:
+
+```python
+import mlflow
+
+model = mlflow.pyfunc.load_model("models:/mibici-p1-departures@champion")
+```
 
 
 ## 8. Pipeline reproducible de ingeniería de datos
