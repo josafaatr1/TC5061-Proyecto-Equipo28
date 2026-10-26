@@ -71,8 +71,8 @@ class P2TargetResult:
     audit: dict[str, object]
 
 
-def _validate_hourly_data(hourly_data: pd.DataFrame) -> pd.DataFrame:
-    """Validar y ordenar registros solo de enero a octubre de 2025."""
+def _validate_hourly_data(hourly_data: pd.DataFrame, test: bool = False) -> pd.DataFrame:
+    """Validar y ordenar registros de enero-octubre de 2025 (o solo de test si ``test``)."""
     if not isinstance(hourly_data, pd.DataFrame):
         raise TypeError("hourly_data debe ser un pandas.DataFrame.")
 
@@ -87,7 +87,10 @@ def _validate_hourly_data(hourly_data: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("'hour' debe usar timestamps sin zona horaria.")
     if (hourly_data["hour"] != hourly_data["hour"].dt.floor("h")).any():
         raise ValueError("'hour' debe estar alineada al inicio de cada hora.")
-    if ((hourly_data["hour"] < YEAR_START) | (hourly_data["hour"] >= VALIDATION_END)).any():
+    if test:
+        if ((hourly_data["hour"] < VALIDATION_END) | (hourly_data["hour"] >= YEAR_END)).any():
+            raise ValueError("La entrada de test debe contener únicamente noviembre-diciembre.")
+    elif ((hourly_data["hour"] < YEAR_START) | (hourly_data["hour"] >= VALIDATION_END)).any():
         raise ValueError(
             "La entrada debe contener únicamente enero-octubre de 2025; "
             "el periodo test está reservado."
@@ -236,20 +239,25 @@ def _partition_for_hours(hours: pd.Series) -> pd.Series:
 def calculate_pressure_windows(
     hourly_data: pd.DataFrame,
     station_catalog: pd.DataFrame,
+    test: bool = False,
 ) -> PressureWindowCalculation:
     """Calcular presiones acumuladas en ventanas exactas y dentro del split.
 
     Una ventana anclada en ``t`` usa los flujos en ``t``, ``t+1`` y ``t+2``.
     Las horas ausentes no se imputan; se excluyen anclas incompletas. Las
     ventanas exactas que crucen de train a validation también se excluyen.
+    ``test=True`` procesa solo noviembre-diciembre como partición ``test``.
     """
-    ordered = _validate_hourly_data(hourly_data)
+    ordered = _validate_hourly_data(hourly_data, test)
     selected, excluded_stations, audit = _capacity_selection(ordered, station_catalog)
 
     if selected.empty:
         raise ValueError("No hay estaciones con capacidad válida para construir P2.")
 
-    selected["partition"] = _partition_for_hours(selected["hour"])
+    if test:
+        selected["partition"] = pd.Series("test", index=selected.index, dtype="string")
+    else:
+        selected["partition"] = _partition_for_hours(selected["hour"])
     grouped = selected.groupby("station_id", sort=False, observed=True)
     future_hour_1 = grouped["hour"].shift(-1)
     future_hour_2 = grouped["hour"].shift(-2)
@@ -305,7 +313,7 @@ def calculate_pressure_windows(
     windows = windows.reset_index(drop=True)
 
     partition_audit = {}
-    for partition in ("train", "validation"):
+    for partition in ("test",) if test else ("train", "validation"):
         anchor_mask = selected["partition"].eq(partition)
         partition_audit[partition] = {
             "eligible_anchors": int(anchor_mask.sum()),
@@ -368,8 +376,13 @@ def fit_pressure_thresholds(train_windows: pd.DataFrame) -> PressureThresholds:
 def apply_pressure_thresholds(
     windows: pd.DataFrame,
     thresholds: PressureThresholds,
+    test: bool = False,
 ) -> pd.DataFrame:
-    """Etiquetar presiones con umbrales congelados y sin usar datos de test."""
+    """Etiquetar presiones con umbrales congelados de train.
+
+    Por defecto rechaza ventanas de test; ``test=True`` solo acepta ventanas de
+    test y aplica los umbrales recibidos sin recalcularlos.
+    """
     required_columns = {
         "partition",
         BIKE_RATIO_COLUMN,
@@ -378,10 +391,14 @@ def apply_pressure_thresholds(
     missing_columns = required_columns - set(windows.columns)
     if missing_columns:
         raise ValueError(f"Faltan columnas para etiquetar: {sorted(missing_columns)}.")
-    if windows["partition"].isin(["test"]).any():
-        raise ValueError("No se permite construir ni inspeccionar etiquetas de test.")
-    if not windows["partition"].isin(["train", "validation"]).all():
-        raise ValueError("Las ventanas deben pertenecer a train o validation.")
+    if test:
+        if not windows["partition"].eq("test").all():
+            raise ValueError("Con test=True las ventanas deben pertenecer únicamente a test.")
+    else:
+        if windows["partition"].isin(["test"]).any():
+            raise ValueError("No se permite construir ni inspeccionar etiquetas de test.")
+        if not windows["partition"].isin(["train", "validation"]).all():
+            raise ValueError("Las ventanas deben pertenecer a train o validation.")
     for threshold in asdict(thresholds).values():
         if not np.isfinite(threshold) or threshold <= 0:
             raise ValueError("Los umbrales deben ser positivos y finitos.")
@@ -490,6 +507,27 @@ def build_p2_targets(
         thresholds=thresholds,
         excluded_stations=calculation.excluded_stations,
         audit=audit,
+    )
+
+
+def build_p2_test_dataset(
+    hourly_data: pd.DataFrame,
+    station_catalog: pd.DataFrame,
+    thresholds: PressureThresholds,
+) -> pd.DataFrame:
+    """Predictores y etiquetas de test con los umbrales congelados de train.
+
+    ``hourly_data`` es el año completo: enero-octubre solo alimenta rezagos y
+    medias móviles; las ventanas y las etiquetas salen únicamente de
+    noviembre-diciembre. Los umbrales se reciben, nunca se recalculan.
+    """
+    test_hours = hourly_data.loc[hourly_data["hour"] >= VALIDATION_END]
+    calculation = calculate_pressure_windows(test_hours, station_catalog, test=True)
+    labeled = apply_pressure_thresholds(calculation.windows, thresholds, test=True)
+
+    label_columns = ["station_id", "hour", "partition", TARGET_BIKE_COLUMN, TARGET_DOCK_COLUMN]
+    return build_features(hourly_data).merge(
+        labeled.loc[:, label_columns], on=["station_id", "hour"], how="inner", validate="1:1"
     )
 
 
