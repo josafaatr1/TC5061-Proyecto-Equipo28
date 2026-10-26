@@ -131,7 +131,7 @@ El prefijo de los runs de la búsqueda de P2 es `P2-bike-pressure-` o `P2-dock-p
 | P3 | K-Means con k=2 (champion) | Silhouette 0.4141 (enero–octubre, sin partición de validation) | No aplica |
 | P3 | Baseline por cuantiles de actividad | Silhouette 0.4024 | No aplica |
 
-**Qué no se evaluó y por qué:** ningún modelo se evaluó en test. Los hiperparámetros se eligieron solo con validation. Para evaluar P2 en test falta construir las etiquetas de noviembre y diciembre con los umbrales congelados de train: el artefacto de etiquetas no tiene esa partición y `p2_targets` rechaza fechas de test a propósito. Hacerlo requiere un cambio explícito de código y la autorización del equipo.
+**Qué no se evaluó y por qué:** al cerrar la entrega 2 ningún modelo se había evaluado en test, por lo que la columna Test de esta tabla quedaba vacía. La evaluación posterior de P1 y P2 está en [reports/test_evaluation.md](../reports/test_evaluation.md); P3 no se evalúa en test.
 
 ## 6. Justificación de la selección
 

@@ -71,6 +71,10 @@ entry_points:
   register:
     command: "python -m mibici.modeling.registry"
 
+  # Evaluación final en test de los champion de P1 y P2 (sin reentrenar ni seleccionar).
+  evaluate:
+    command: "python -m mibici.modeling.evaluate"
+
   # Pendiente: activar cuando se implemente mibici/modeling/predict.py
   # predict:
   #   parameters:
