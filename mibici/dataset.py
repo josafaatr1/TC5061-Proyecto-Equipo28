@@ -1,4 +1,3 @@
-
 import hashlib
 from pathlib import Path
 import time
@@ -46,16 +45,13 @@ def validate_columns(df: pd.DataFrame, required_columns: set[str]) -> None:
     missing_columns = required_columns - set(df.columns)
 
     if missing_columns:
-        raise ValueError(
-            f"Faltan columnas obligatorias: {sorted(missing_columns)}"
-        )
+        raise ValueError(f"Faltan columnas obligatorias: {sorted(missing_columns)}")
+
 
 def load_trips(file_path: Path) -> pd.DataFrame:
     """Leer viajes de MiBici con validación de esquema y codificación."""
     if not file_path.is_file():
-        raise FileNotFoundError(
-            f"No se encontró el archivo de viajes: {file_path}"
-        )
+        raise FileNotFoundError(f"No se encontró el archivo de viajes: {file_path}")
 
     # Probar primero UTF-8 y después CP1252.
     for encoding in ["utf-8", "cp1252"]:
@@ -86,10 +82,7 @@ def load_trips(file_path: Path) -> pd.DataFrame:
                     errors="coerce",
                 )
 
-            logger.info(
-                f"Archivo leído con codificación {encoding}: "
-                f"{file_path.name}"
-            )
+            logger.info(f"Archivo leído con codificación {encoding}: {file_path.name}")
 
             return df
 
@@ -97,9 +90,9 @@ def load_trips(file_path: Path) -> pd.DataFrame:
             continue
 
     raise ValueError(
-        f"No se encontró una codificación compatible "
-        f"con el esquema esperado: {file_path}"
+        f"No se encontró una codificación compatible con el esquema esperado: {file_path}"
     )
+
 
 def load_stations(file_path: Path) -> pd.DataFrame:
     """Leer el catálogo de estaciones de MiBici."""
@@ -152,17 +145,11 @@ def prepare_trips(df: pd.DataFrame) -> pd.DataFrame:
         )
 
     # Calcular la duración en segundos.
-    result["duration_seconds"] = (
-        result["ended_at"] - result["started_at"]
-    ).dt.total_seconds()
+    result["duration_seconds"] = (result["ended_at"] - result["started_at"]).dt.total_seconds()
 
     # Identificar situaciones que requieren revisión.
-    result["has_invalid_timestamp"] = (
-        result["started_at"].isna() | result["ended_at"].isna()
-    )
-    result["has_nonpositive_duration"] = (
-        result["duration_seconds"] <= 0
-    )
+    result["has_invalid_timestamp"] = result["started_at"].isna() | result["ended_at"].isna()
+    result["has_nonpositive_duration"] = result["duration_seconds"] <= 0
     result["is_long_trip"] = result["duration_seconds"] > 3600
 
     return result
@@ -186,6 +173,7 @@ def save_interim_trips(
 
     logger.success(f"Dataset intermedio guardado en: {output_path}")
 
+
 def download_file(
     url: str,
     output_path: Path,
@@ -203,8 +191,7 @@ def download_file(
 
     headers = {
         "User-Agent": (
-            "Mozilla/5.0 (X11; Linux x86_64) "
-            "AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36"
         ),
         "Accept": "*/*",
     }
@@ -221,9 +208,7 @@ def download_file(
                 response.raise_for_status()
 
                 with temporary_path.open("wb") as file:
-                    for chunk in response.iter_content(
-                        chunk_size=1024 * 1024
-                    ):
+                    for chunk in response.iter_content(chunk_size=1024 * 1024):
                         if chunk:
                             file.write(chunk)
 
@@ -243,13 +228,9 @@ def download_file(
             temporary_path.unlink(missing_ok=True)
 
             if attempt == max_retries:
-                raise RuntimeError(
-                    f"No fue posible descargar {url}"
-                ) from error
+                raise RuntimeError(f"No fue posible descargar {url}") from error
 
-            logger.warning(
-                f"Intento {attempt}/{max_retries} fallido: {error}"
-            )
+            logger.warning(f"Intento {attempt}/{max_retries} fallido: {error}")
             time.sleep(attempt * 2)
 
     raise RuntimeError("No se completó la descarga.")
@@ -299,19 +280,13 @@ def aggregate_station_hourly(trips: pd.DataFrame) -> pd.DataFrame:
     # Combinar los movimientos sin perder horas con un solo tipo de actividad.
     hourly = pd.concat([departures, arrivals], axis=1).fillna(0)
 
-    hourly[["departures", "arrivals"]] = hourly[
-        ["departures", "arrivals"]
-    ].astype("int64")
+    hourly[["departures", "arrivals"]] = hourly[["departures", "arrivals"]].astype("int64")
 
     # Calcular el balance neto y la actividad total.
     hourly["net_flow"] = hourly["arrivals"] - hourly["departures"]
-    hourly["total_activity"] = (
-        hourly["arrivals"] + hourly["departures"]
-    )
+    hourly["total_activity"] = hourly["arrivals"] + hourly["departures"]
 
-    return hourly.reset_index().sort_values(
-        ["station_id", "hour"]
-    ).reset_index(drop=True)
+    return hourly.reset_index().sort_values(["station_id", "hour"]).reset_index(drop=True)
 
 
 def complete_station_hourly(
@@ -337,9 +312,7 @@ def complete_station_hourly(
         raise ValueError("El inicio debe ser anterior al final.")
 
     # Conservar exclusivamente las horas del calendario solicitado.
-    observed = hourly.loc[
-        (hourly["hour"] >= start) & (hourly["hour"] < end)
-    ].copy()
+    observed = hourly.loc[(hourly["hour"] >= start) & (hourly["hour"] < end)].copy()
 
     if observed.empty:
         return observed.assign(is_observed_hour=pd.Series(dtype="bool"))
@@ -362,18 +335,12 @@ def complete_station_hourly(
             freq="h",
         )
 
-        station_result = (
-            station_data.set_index("hour")
-            .reindex(hourly_index)
-            .rename_axis("hour")
-        )
+        station_result = station_data.set_index("hour").reindex(hourly_index).rename_axis("hour")
 
         station_result["station_id"] = station_id
 
         # Distinguir horas con actividad de horas completadas.
-        station_result["is_observed_hour"] = (
-            station_result["total_activity"].notna()
-        )
+        station_result["is_observed_hour"] = station_result["total_activity"].notna()
 
         # Completar conteos ausentes sin inferir inventarios.
         count_columns = [
@@ -383,47 +350,40 @@ def complete_station_hourly(
             "total_activity",
         ]
 
-        station_result[count_columns] = (
-            station_result[count_columns]
-            .fillna(0)
-            .astype("int64")
-        )
+        station_result[count_columns] = station_result[count_columns].fillna(0).astype("int64")
 
         completed.append(station_result.reset_index())
 
     result = pd.concat(completed, ignore_index=True)
 
-    return result[
-        [
-            "station_id",
-            "hour",
-            "departures",
-            "arrivals",
-            "net_flow",
-            "total_activity",
-            "is_observed_hour",
+    return (
+        result[
+            [
+                "station_id",
+                "hour",
+                "departures",
+                "arrivals",
+                "net_flow",
+                "total_activity",
+                "is_observed_hour",
+            ]
         ]
-    ].sort_values(
-        ["station_id", "hour"]
-    ).reset_index(drop=True)
+        .sort_values(["station_id", "hour"])
+        .reset_index(drop=True)
+    )
 
 
 def build_annual_hourly_dataset(
     year: int = INGEST_YEAR,
 ) -> tuple[Path, Path]:
-
     """Construir datasets horarios observados y completados de un año."""
     monthly_frames = []
 
     for month in range(1, 13):
-        file_path = (
-            INTERIM_DATA_DIR / f"trips_{year}_{month:02d}.parquet"
-        )
+        file_path = INTERIM_DATA_DIR / f"trips_{year}_{month:02d}.parquet"
 
         if not file_path.is_file():
-            raise FileNotFoundError(
-                f"No existe el archivo mensual: {file_path}"
-            )
+            raise FileNotFoundError(f"No existe el archivo mensual: {file_path}")
 
         # Cargar únicamente los campos necesarios para la agregación.
         monthly_trips = pd.read_parquet(
@@ -437,7 +397,6 @@ def build_annual_hourly_dataset(
             ],
         )
 
-
         # Verificar que los viajes comiencen en el mes correspondiente.
         expected_period = pd.Period(
             year=year,
@@ -445,12 +404,8 @@ def build_annual_hourly_dataset(
             freq="M",
         )
 
-        invalid_dates = (
-            monthly_trips["started_at"].isna()
-            | (
-                monthly_trips["started_at"].dt.to_period("M")
-                != expected_period
-            )
+        invalid_dates = monthly_trips["started_at"].isna() | (
+            monthly_trips["started_at"].dt.to_period("M") != expected_period
         )
 
         if invalid_dates.any():
@@ -460,18 +415,13 @@ def build_annual_hourly_dataset(
                 "de inicio fuera del mes correspondiente."
             )
 
-
         # Rechazar viajes sin estaciones de origen o destino.
         station_columns = [
             "origin_station_id",
             "destination_station_id",
         ]
 
-        invalid_stations = (
-            monthly_trips[station_columns]
-            .isna()
-            .any(axis=1)
-        )
+        invalid_stations = monthly_trips[station_columns].isna().any(axis=1)
 
         if invalid_stations.any():
             raise ValueError(
@@ -487,9 +437,7 @@ def build_annual_hourly_dataset(
 
     # Detectar identificadores de viaje nulos o duplicados.
     if annual_trips["trip_id"].isna().any():
-        raise ValueError(
-            "El dataset anual contiene identificadores de viaje nulos."
-        )
+        raise ValueError("El dataset anual contiene identificadores de viaje nulos.")
 
     duplicated_trips = annual_trips["trip_id"].duplicated()
 
@@ -506,9 +454,8 @@ def build_annual_hourly_dataset(
     observed = aggregate_station_hourly(annual_trips)
 
     # Verificar que no se pierdan salidas ni llegadas.
-    if (
-        observed["departures"].sum() != len(annual_trips)
-        or observed["arrivals"].sum() != len(annual_trips)
+    if observed["departures"].sum() != len(annual_trips) or observed["arrivals"].sum() != len(
+        annual_trips
     ):
         raise ValueError("La agregación no conserva los viajes.")
 
@@ -529,24 +476,14 @@ def build_annual_hourly_dataset(
 
     # Comprobar que el completado conserve los movimientos del año.
     for column in ("departures", "arrivals"):
-        if (
-            completed[column].sum()
-            != observed_in_year[column].sum()
-        ):
-            raise ValueError(
-                f"El completado modificó los conteos de {column}."
-            )
+        if completed[column].sum() != observed_in_year[column].sum():
+            raise ValueError(f"El completado modificó los conteos de {column}.")
 
     # Guardar los dos niveles de datos procesados.
     PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    observed_path = (
-        PROCESSED_DATA_DIR / f"station_hourly_{year}.parquet"
-    )
-    completed_path = (
-        PROCESSED_DATA_DIR
-        / f"station_hourly_{year}_complete.parquet"
-    )
+    observed_path = PROCESSED_DATA_DIR / f"station_hourly_{year}.parquet"
+    completed_path = PROCESSED_DATA_DIR / f"station_hourly_{year}_complete.parquet"
 
     observed.to_parquet(
         observed_path,
@@ -563,6 +500,7 @@ def build_annual_hourly_dataset(
     )
 
     return observed_path, completed_path
+
 
 def main(
     trips_path: Path = RAW_DATA_DIR / "datos_abiertos_2025_01.csv",
@@ -582,18 +520,9 @@ def main(
     # Estandarizar los viajes y calcular indicadores de calidad.
     prepared = prepare_trips(trips)
 
-    logger.info(
-        f"Fechas inválidas: "
-        f"{prepared['has_invalid_timestamp'].sum():,}"
-    )
-    logger.info(
-        f"Duraciones no positivas: "
-        f"{prepared['has_nonpositive_duration'].sum():,}"
-    )
-    logger.info(
-        f"Viajes largos: "
-        f"{prepared['is_long_trip'].sum():,}"
-    )
+    logger.info(f"Fechas inválidas: {prepared['has_invalid_timestamp'].sum():,}")
+    logger.info(f"Duraciones no positivas: {prepared['has_nonpositive_duration'].sum():,}")
+    logger.info(f"Viajes largos: {prepared['is_long_trip'].sum():,}")
 
     # Guardar el dataset intermedio sin modificar los CSV originales.
     save_interim_trips(prepared, output_path)
@@ -631,12 +560,9 @@ def download_year(
         output_path = output_dir / filename
 
         # Verificar que la URL corresponda al archivo esperado.
-        if (
-            not row.url.startswith(
-                "https://www.mibici.net/site/assets/files/"
-            )
-            or not row.url.endswith(f"/{filename}")
-        ):
+        if not row.url.startswith(
+            "https://www.mibici.net/site/assets/files/"
+        ) or not row.url.endswith(f"/{filename}"):
             raise ValueError(f"URL inesperada para {filename}")
 
         logger.info(f"Procesando descarga: {filename}")
@@ -663,18 +589,12 @@ def prepare_year(year: int = INGEST_YEAR) -> list[Path]:
     output_paths = []
 
     for month in range(1, 13):
-        input_path = (
-            RAW_DATA_DIR / f"datos_abiertos_{year}_{month:02d}.csv"
-        )
-        output_path = (
-            INTERIM_DATA_DIR / f"trips_{year}_{month:02d}.parquet"
-        )
+        input_path = RAW_DATA_DIR / f"datos_abiertos_{year}_{month:02d}.csv"
+        output_path = INTERIM_DATA_DIR / f"trips_{year}_{month:02d}.parquet"
 
         # Verificar la existencia del archivo original.
         if not input_path.is_file():
-            raise FileNotFoundError(
-                f"No existe el archivo mensual: {input_path}"
-            )
+            raise FileNotFoundError(f"No existe el archivo mensual: {input_path}")
 
         logger.info(f"Preparando viajes de {year}-{month:02d}")
 
@@ -685,15 +605,12 @@ def prepare_year(year: int = INGEST_YEAR) -> list[Path]:
 
         output_paths.append(output_path)
 
-        logger.info(
-            f"Mes {month:02d}: {len(prepared):,} viajes procesados."
-        )
+        logger.info(f"Mes {month:02d}: {len(prepared):,} viajes procesados.")
 
-    logger.success(
-        f"Preparación anual completada: {len(output_paths)} meses."
-    )
+    logger.success(f"Preparación anual completada: {len(output_paths)} meses.")
 
     return output_paths
+
 
 def run_pipeline(
     year: int = INGEST_YEAR,
@@ -701,36 +618,29 @@ def run_pipeline(
 ) -> tuple[Path, Path]:
     """Ejecutar la descarga, preparación y agregación anual."""
     if year != 2025:
-        raise ValueError(
-            "El manifiesto disponible corresponde únicamente a 2025."
-        )
+        raise ValueError("El manifiesto disponible corresponde únicamente a 2025.")
 
     logger.info(f"Iniciando pipeline anual de MiBici {year}.")
 
     # Descargar o reutilizar los archivos originales.
     inventory = download_year(manifest_path)
 
-    logger.info(
-        f"Archivos originales disponibles: {len(inventory)}"
-    )
+    logger.info(f"Archivos originales disponibles: {len(inventory)}")
 
     # Estandarizar los doce archivos mensuales.
     prepared_paths = prepare_year(year)
 
-    logger.info(
-        f"Archivos intermedios generados: {len(prepared_paths)}"
-    )
+    logger.info(f"Archivos intermedios generados: {len(prepared_paths)}")
 
     # Construir los datasets horarios anuales.
-    observed_path, completed_path = (
-        build_annual_hourly_dataset(year)
-    )
+    observed_path, completed_path = build_annual_hourly_dataset(year)
 
     logger.success("Pipeline anual completado correctamente.")
     logger.info(f"Dataset observado: {observed_path}")
     logger.info(f"Dataset completo: {completed_path}")
 
     return observed_path, completed_path
+
 
 @app.command("download-year")
 def download_year_command(
@@ -739,9 +649,7 @@ def download_year_command(
     """Descargar los archivos mensuales de MiBici 2025."""
     inventory = download_year(manifest_path)
 
-    logger.success(
-        f"Descarga anual completada: {len(inventory)} archivos."
-    )
+    logger.success(f"Descarga anual completada: {len(inventory)} archivos.")
 
 
 @app.command("build-hourly")
@@ -754,14 +662,13 @@ def build_hourly_command(
     logger.success(f"Dataset observado: {observed_path}")
     logger.success(f"Dataset completo: {completed_path}")
 
+
 @app.command("prepare-year")
 def prepare_year_command(year: int = INGEST_YEAR):
     """Estandarizar los CSV mensuales y generar archivos Parquet."""
     output_paths = prepare_year(year)
 
-    logger.success(
-        f"Archivos intermedios generados: {len(output_paths)}"
-    )
+    logger.success(f"Archivos intermedios generados: {len(output_paths)}")
 
 
 @app.command("run-pipeline")
@@ -782,6 +689,7 @@ def run_pipeline_command(
             completed_path,
             duration_seconds=time.perf_counter() - start,
         )
+
 
 if __name__ == "__main__":
     app()

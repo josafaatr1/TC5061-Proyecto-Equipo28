@@ -10,9 +10,12 @@ lee registros desde noviembre de 2025 (test reservado).
     mlflow run . -e p2_train --env-manager local
     mlflow run . -e p3_train --env-manager local
     mlflow run . -e train -P question=p1 -P learning_rate=0.05 --env-manager local
+    mlflow run . -e search -P question=p1 --env-manager local
 """
 
+from dataclasses import dataclass
 import hashlib
+from itertools import product
 from pathlib import Path
 import platform
 import subprocess
@@ -21,6 +24,8 @@ from time import perf_counter
 from loguru import logger
 from matplotlib.figure import Figure
 import mlflow
+from mlflow.data.dataset import Dataset
+from mlflow.models import infer_signature
 import numpy as np
 import pandas as pd
 from sklearn import __version__ as SKLEARN_VERSION
@@ -34,12 +39,16 @@ import typer
 
 from mibici import clustering
 from mibici.config import (
+    DATA_INVENTORY,
     EXTERNAL_DATA_DIR,
     HGB_PARAMS,
     P3_MAX_K,
     PROCESSED_DATA_DIR,
     PROJ_ROOT,
     RANDOM_SEED,
+    SEARCH_LEARNING_RATES,
+    SEARCH_MAX_LEAF_NODES,
+    SOURCES_MANIFEST,
 )
 from mibici.features import REQUIRED_COLUMNS
 from mibici.modeling import p2_train
@@ -56,6 +65,7 @@ from mibici.modeling.train import (
     train_candidate_model,
     train_dummy_regressor,
 )
+from mibici.tracking import calculate_data_version as calculate_raw_data_version
 
 app = typer.Typer()
 
@@ -108,6 +118,14 @@ TRAIN_MODELS = {
     "p1": ("dummy_mean", "seasonal_weekly", P1_CANDIDATE_NAME),
     "p2": (p2_train.BASELINE_NAME, p2_train.CANDIDATE_NAME),
     "p3": (P3_BASELINE_NAME, P3_KMEANS_NAME),
+}
+# Familia del modelo: etiqueta `model_family` de cada run hijo de P1 y P2.
+MODEL_FAMILIES = {
+    "dummy_mean": "dummy",
+    "seasonal_weekly": "seasonal_naive",
+    P1_CANDIDATE_NAME: "hist_gradient_boosting",
+    p2_train.BASELINE_NAME: "dummy",
+    p2_train.CANDIDATE_NAME: "hist_gradient_boosting",
 }
 P2_VALIDATION_METRICS = (
     "average_precision",
@@ -320,55 +338,226 @@ def precision_recall_figure(
     return figure
 
 
+@dataclass(frozen=True)
+class FittedRun:
+    """Modelo ajustado de P1 y lo necesario para registrar su run hijo."""
+
+    run_name: str
+    model_name: str
+    estimator: object
+    columns: list[str]
+    params: dict[str, object]
+    stage: str
+
+
+def parse_search_grid(learning_rates: str, max_leaf_nodes: str) -> list[dict[str, float | int]]:
+    """Combinaciones de hiperparámetros a partir de listas separadas por comas."""
+    return [
+        {"learning_rate": float(rate), "max_leaf_nodes": int(leaves)}
+        for rate, leaves in product(learning_rates.split(","), max_leaf_nodes.split(","))
+    ]
+
+
+def search_suffix(params: dict[str, float | int]) -> str:
+    """Sufijo del nombre de un run de búsqueda, p. ej. ``lr0.05-leaf15``."""
+    return f"lr{params['learning_rate']}-leaf{params['max_leaf_nodes']}"
+
+
+def data_manifest(data_version: str, dataset_path: Path, **provenance: object) -> dict:
+    """Procedencia de los datos de un run: huellas, archivo de origen y periodos."""
+    inventory = pd.read_csv(DATA_INVENTORY, dtype=str)
+    return {
+        "train_validation_data_version": data_version,
+        "raw_data_version": calculate_raw_data_version(inventory),
+        "dataset_file": dataset_path.name,
+        "sources_manifest": SOURCES_MANIFEST.name,
+        "raw_inventory": DATA_INVENTORY.name,
+        **provenance,
+    }
+
+
+def child_tags(tags: dict[str, str], model_name: str, stage: str, **extra: str) -> dict[str, str]:
+    """Tags de un run hijo: los comunes más modelo, familia y etapa de trabajo."""
+    return {
+        **tags,
+        **extra,
+        "model_name": model_name,
+        "model_family": MODEL_FAMILIES[model_name],
+        "stage_of_work": stage,
+    }
+
+
+def log_child_metadata(
+    tags: dict[str, str],
+    params: dict[str, object],
+    metrics: dict[str, float],
+    dataset: Dataset,
+    manifest: dict,
+) -> None:
+    """Registrar lo común de un run hijo: tags, parámetros, datos, métricas y procedencia."""
+    mlflow.set_tags(tags)
+    mlflow.log_params(params)
+    mlflow.log_input(dataset, context="training")
+    mlflow.log_metrics(metrics)
+    mlflow.log_dict({"tags": tags, "params": params}, "config/run_config.json")
+    mlflow.log_dict(manifest, "manifests/data_manifest.json")
+    for path in (SOURCES_MANIFEST, DATA_INVENTORY):
+        mlflow.log_artifact(str(path), artifact_path="manifests")
+
+
+def predict_with(estimator: object, model_input: pd.DataFrame | np.ndarray) -> np.ndarray:
+    """Predecir con un modelo de scikit-learn o con uno pyfunc del proyecto."""
+    if isinstance(estimator, mlflow.pyfunc.PythonModel):
+        return estimator.predict(None, model_input)
+    return estimator.predict(model_input)
+
+
+def log_signed_model(estimator: object, example: pd.DataFrame | np.ndarray, model_name: str):
+    """Registrar el modelo con un ejemplo de entrada y la firma inferida de sus predicciones."""
+    signature = infer_signature(example, predict_with(estimator, example))
+    if isinstance(estimator, mlflow.pyfunc.PythonModel):
+        mlflow.pyfunc.log_model(
+            name="model", python_model=estimator, input_example=example, signature=signature
+        )
+        return
+
+    is_hgb = MODEL_FAMILIES[model_name] == "hist_gradient_boosting"
+    mlflow.sklearn.log_model(
+        estimator,
+        name="model",
+        input_example=example,
+        signature=signature,
+        skops_trusted_types=HGB_TRUSTED_TYPES if is_hgb else None,
+    )
+
+
+def selection_summary(table: pd.DataFrame, metric: str, higher_is_better: bool) -> dict:
+    """Comparar el mejor candidato con el mejor baseline según una métrica de validación.
+
+    ``table`` tiene una fila por run, con las columnas ``run_name``, ``stage`` y ``metric``.
+    """
+
+    def best(rows: pd.DataFrame) -> pd.Series:
+        values = rows[metric]
+        return rows.loc[values.idxmax() if higher_is_better else values.idxmin()]
+
+    is_baseline = table["stage"] == "baseline"
+    baseline = best(table.loc[is_baseline])
+    candidate = best(table.loc[~is_baseline])
+    gain = candidate[metric] - baseline[metric]
+    if not higher_is_better:
+        gain = -gain
+
+    return {
+        "metric": metric,
+        "higher_is_better": higher_is_better,
+        "best_baseline": {"run_name": baseline["run_name"], "value": float(baseline[metric])},
+        "best_candidate": {"run_name": candidate["run_name"], "value": float(candidate[metric])},
+        "n_candidates": int((~is_baseline).sum()),
+        "improvement": float(gain),
+        "improvement_pct": float(100 * gain / abs(baseline[metric])),
+    }
+
+
+def log_selection(summaries: dict[str, dict]) -> None:
+    """Guardar en el run padre qué candidato gana frente al mejor baseline."""
+    mlflow.log_dict(summaries, "reports/selection_summary.json")
+    for label, summary in summaries.items():
+        mlflow.set_tag(f"selected_run_{label}", summary["best_candidate"]["run_name"])
+        mlflow.log_metric(f"{label}_improvement_pct", summary["improvement_pct"])
+
+
 def run_p1(
     hourly_path: Path = HOURLY_PATH,
     hgb_params: dict | None = None,
     model: str = "all",
+    search_grid: list[dict] | None = None,
 ) -> pd.DataFrame:
     """Entrenar y evaluar P1 en train/validation y registrar un run por modelo.
 
     ``hgb_params`` reemplaza hiperparámetros del candidato y ``model`` limita
-    los runs hijos a un solo modelo (``"all"`` registra todos).
+    los runs hijos a un solo modelo (``"all"`` registra todos). ``search_grid``
+    (un diccionario de hiperparámetros por combinación) registra una búsqueda:
+    el run padre es ``P1-search`` y cada combinación es un hijo candidato.
     """
-    candidate_params = {**CANDIDATE_PARAMS, **(hgb_params or {})}
+    searching = search_grid is not None
+    configs = search_grid if searching else [hgb_params or {}]
+    stage = "search" if searching else "training"
     hourly_data = read_train_validation_hourly(hourly_path)
     data_version = calculate_data_version(hourly_data)
 
     supervised_data = prepare_supervised_data(hourly_data)
     splits = split_chronologically(supervised_data, evaluate_test=False)
     baseline_metrics = evaluate_baselines(splits)
-
-    # Entrenar una sola vez para poder registrar el modelo evaluado.
-    fit_start = perf_counter()
-    candidate = train_candidate_model(splits["train"], candidate_params)
-    fit_seconds = perf_counter() - fit_start
-    candidate_metrics = evaluate_candidate(splits, model=candidate, fit_seconds=fit_seconds)
-    metrics = pd.concat([baseline_metrics, candidate_metrics], ignore_index=True)
-
-    feature_columns = list(candidate.feature_names_in_)
+    baseline_metrics = baseline_metrics.assign(
+        run_name=baseline_metrics["model"].map(P1_RUN_NAMES), stage="baseline"
+    )
 
     # Cohorte de evaluación de train.py: filas de validation con rezago semanal.
     cohort = splits["validation"]
     cohort = cohort.loc[cohort[SEASONAL_COLUMN].notna()]
-    dummy = train_dummy_regressor(splits["train"])
-    seasonal = SeasonalNaiveModel()
-    models = {
-        "dummy_mean": (dummy, ["hour_of_day"]),
-        "seasonal_weekly": (seasonal, [SEASONAL_COLUMN]),
-        "hist_gradient_boosting_poisson": (candidate, feature_columns),
-    }
+    fitted = [
+        FittedRun(
+            P1_RUN_NAMES["dummy_mean"],
+            "dummy_mean",
+            train_dummy_regressor(splits["train"]),
+            ["hour_of_day"],
+            {**P1_MODEL_PARAMS["dummy_mean"], "predictor_columns": "ninguno (media de train)"},
+            "baseline",
+        ),
+        FittedRun(
+            P1_RUN_NAMES["seasonal_weekly"],
+            "seasonal_weekly",
+            SeasonalNaiveModel(),
+            [SEASONAL_COLUMN],
+            {**P1_MODEL_PARAMS["seasonal_weekly"], "predictor_columns": SEASONAL_COLUMN},
+            "baseline",
+        ),
+    ]
 
-    predictors = {
-        "dummy_mean": "ninguno (media de train)",
-        "seasonal_weekly": SEASONAL_COLUMN,
-        "hist_gradient_boosting_poisson": ",".join(feature_columns),
-    }
+    all_metrics = [baseline_metrics]
+    for config in configs:
+        candidate_params = {**CANDIDATE_PARAMS, **config}
+        run_name = (
+            f"P1-regression-search-{search_suffix(config)}"
+            if searching
+            else P1_RUN_NAMES[P1_CANDIDATE_NAME]
+        )
+
+        # Entrenar una sola vez para poder registrar el modelo evaluado.
+        fit_start = perf_counter()
+        candidate = train_candidate_model(splits["train"], candidate_params)
+        fit_seconds = perf_counter() - fit_start
+        candidate_metrics = evaluate_candidate(splits, model=candidate, fit_seconds=fit_seconds)
+        all_metrics.append(candidate_metrics.assign(run_name=run_name, stage=stage, **config))
+
+        feature_columns = list(candidate.feature_names_in_)
+        params = {
+            **P1_MODEL_PARAMS[P1_CANDIDATE_NAME],
+            **candidate_params,
+            "predictor_columns": ",".join(feature_columns),
+        }
+        fitted.append(
+            FittedRun(run_name, P1_CANDIDATE_NAME, candidate, feature_columns, params, stage)
+        )
+    metrics = pd.concat(all_metrics, ignore_index=True)
+
     tags = {**common_tags("P1", data_version), "objective": "departures por estación-hora"}
     shared_params = period_params(len(splits["train"]), len(splits["validation"]))
     dataset = mlflow.data.from_pandas(hourly_data, source=str(hourly_path), name=DATASET_NAME)
+    manifest = data_manifest(data_version, hourly_path, **shared_params)
+    validation_table = metrics.loc[metrics["evaluation_set"] == "validation"].rename(
+        columns={"mae": "val_mae"}
+    )
 
     with mlflow.start_run():
-        mlflow.set_tags({**tags, "mlflow.runName": "P1-regression"})
+        mlflow.set_tags(
+            {
+                **tags,
+                "mlflow.runName": "P1-search" if searching else "P1-regression",
+                "stage_of_work": stage,
+            }
+        )
         mlflow.log_params(shared_params)
         mlflow.log_text(metrics.to_csv(index=False), "reports/p1_model_comparison.csv")
         mlflow.log_dict(
@@ -377,30 +566,25 @@ def run_p1(
                 "params": shared_params,
                 "predictor_columns": feature_columns,
                 "excluded_predictor_columns": ["station_id", "hour", "target_departures"],
-                "candidate_parameters": candidate_params,
+                "candidate_parameters": [{**CANDIDATE_PARAMS, **config} for config in configs],
             },
             "reports/p1_run_report.json",
         )
+        log_selection({"departures": selection_summary(validation_table, "val_mae", False)})
 
-        for model_name, model_metrics in metrics.groupby("model", sort=False):
-            if model not in ("all", model_name):
+        for item in fitted:
+            if model not in ("all", item.model_name):
                 continue
-            by_split = model_metrics.set_index("evaluation_set")
+            by_split = metrics.loc[metrics["run_name"] == item.run_name].set_index(
+                "evaluation_set"
+            )
             validation = by_split.loc["validation"]
             train = by_split.loc["train"]
 
-            with mlflow.start_run(run_name=P1_RUN_NAMES[model_name], nested=True):
-                mlflow.set_tags({**tags, "model_name": model_name})
-                mlflow.log_params(
-                    {
-                        **shared_params,
-                        **P1_MODEL_PARAMS[model_name],
-                        **(candidate_params if model_name == P1_CANDIDATE_NAME else {}),
-                        "predictor_columns": predictors[model_name],
-                    }
-                )
-                mlflow.log_input(dataset, context="training")
-                mlflow.log_metrics(
+            with mlflow.start_run(run_name=item.run_name, nested=True):
+                log_child_metadata(
+                    child_tags(tags, item.model_name, item.stage),
+                    {**shared_params, **item.params},
                     {
                         "val_mae": validation["mae"],
                         "val_rmse": validation["rmse"],
@@ -411,33 +595,19 @@ def run_p1(
                         "train_rmse": train["rmse"],
                         "fit_seconds": validation["fit_seconds"],
                         "evaluation_seconds": validation["evaluation_seconds"],
-                    }
+                    },
+                    dataset,
+                    manifest,
                 )
 
-                estimator, model_columns = models[model_name]
-                model_input = cohort.loc[:, model_columns]
-                if estimator is seasonal:
-                    predictions = seasonal.predict(None, model_input)
-                else:
-                    predictions = estimator.predict(model_input)
-                profile = hourly_profile_table(cohort, predictions)
+                model_input = cohort.loc[:, item.columns]
+                profile = hourly_profile_table(cohort, predict_with(item.estimator, model_input))
                 mlflow.log_text(profile.to_csv(index=False), "evaluation/hourly_profile.csv")
                 mlflow.log_figure(
-                    hourly_profile_figure(profile, f"Validation · {model_name}"),
+                    hourly_profile_figure(profile, f"Validation · {item.run_name}"),
                     "evaluation/hourly_profile.png",
                 )
-
-                if estimator is seasonal:
-                    mlflow.pyfunc.log_model(
-                        name="model", python_model=seasonal, input_example=model_input.head(5)
-                    )
-                else:
-                    mlflow.sklearn.log_model(
-                        estimator,
-                        name="model",
-                        input_example=model_input.head(5),
-                        skops_trusted_types=HGB_TRUSTED_TYPES if estimator is candidate else None,
-                    )
+                log_signed_model(item.estimator, model_input.head(5), item.model_name)
 
     logger.success("Runs P1 registrados en MLflow.")
     return metrics
@@ -449,13 +619,18 @@ def run_p2(
     catalog_path: Path = EXTERNAL_DATA_DIR / CATALOG_FILENAME,
     hgb_params: dict | None = None,
     model: str = "all",
+    search_grid: list[dict] | None = None,
 ) -> pd.DataFrame:
     """Reproducir etiquetas, entrenar P2 y registrar un run por objetivo y modelo.
 
     ``hgb_params`` reemplaza hiperparámetros del candidato y ``model`` limita
-    los runs hijos a un solo modelo (``"all"`` registra todos).
+    los runs hijos a un solo modelo (``"all"`` registra todos). ``search_grid``
+    (un diccionario de hiperparámetros por combinación) registra una búsqueda:
+    el run padre es ``P2-search`` y cada combinación y objetivo es un hijo.
     """
-    candidate_params = {**p2_train.CANDIDATE_PARAMS, **(hgb_params or {})}
+    searching = search_grid is not None
+    configs = search_grid if searching else [hgb_params or {}]
+    stage = "search" if searching else "training"
     provenance = p2_train.verify_label_reproducibility(
         label_path=label_path,
         hourly_path=hourly_path,
@@ -475,8 +650,34 @@ def run_p2(
         ],
         filters=[[("partition", "==", "train")], [("partition", "==", "validation")]],
     )
-    experiment = p2_train.run_validation_experiment(labeled_data, candidate_params)
-    metrics = experiment.metrics
+    experiments = [
+        (
+            config,
+            p2_train.run_validation_experiment(
+                labeled_data, {**p2_train.CANDIDATE_PARAMS, **config}
+            ),
+        )
+        for config in configs
+    ]
+
+    # Una fila por run hijo; los baselines no dependen de los hiperparámetros.
+    children = []
+    for position, (config, experiment) in enumerate(experiments):
+        for row in experiment.metrics.to_dict(orient="records"):
+            is_candidate = row["model"] == p2_train.CANDIDATE_NAME
+            if not is_candidate and position > 0:
+                continue
+            label = (
+                f"search-{search_suffix(config)}" if searching and is_candidate else row["model"]
+            )
+            row = {
+                **row,
+                **config,
+                "run_name": p2_run_name(row["target_name"], label),
+                "stage": stage if is_candidate else "baseline",
+            }
+            children.append((row, experiment.models[row["target"]], config))
+    metrics = pd.DataFrame([row for row, _, _ in children])
 
     # Mismas filas de validation que usó la evaluación, para las curvas PR.
     splits = p2_train.prepare_p2_splits(labeled_data)
@@ -499,9 +700,34 @@ def run_p2(
         "dock_pressure_ratio_threshold": thresholds["dock_pressure_ratio"],
     }
     dataset = mlflow.data.from_pandas(labeled_data, source=str(label_path), name="p2_targets")
+    manifest = data_manifest(
+        data_version,
+        label_path,
+        hourly_file=hourly_path.name,
+        **{
+            key: tags[key]
+            for key in ("catalog_version", "catalog_sha256", "label_artifact_sha256")
+        },
+        **shared_params,
+    )
+    validation_table = metrics.rename(columns={"average_precision": "val_average_precision"})
+    summaries = {
+        target_name: selection_summary(
+            validation_table.loc[validation_table["target_name"] == target_name],
+            "val_average_precision",
+            True,
+        )
+        for target_name in p2_train.TARGET_NAMES.values()
+    }
 
     with mlflow.start_run():
-        mlflow.set_tags({**tags, "mlflow.runName": "P2-classification"})
+        mlflow.set_tags(
+            {
+                **tags,
+                "mlflow.runName": "P2-search" if searching else "P2-classification",
+                "stage_of_work": stage,
+            }
+        )
         mlflow.log_params(shared_params)
         mlflow.log_text(metrics.to_csv(index=False), "reports/p2_model_comparison.csv")
         mlflow.log_dict(
@@ -509,43 +735,40 @@ def run_p2(
                 "data_provenance": provenance,
                 "tags": tags,
                 "params": shared_params,
-                "candidate_parameters": candidate_params,
+                "candidate_parameters": [
+                    {**p2_train.CANDIDATE_PARAMS, **config} for config in configs
+                ],
             },
             "reports/p2_run_report.json",
         )
+        log_selection(summaries)
         audit_path = catalog_path.with_name(AUDIT_FILENAME)
         if audit_path.is_file():
             mlflow.log_artifact(str(audit_path), artifact_path="reports")
 
-        for row in metrics.to_dict(orient="records"):
+        for row, objective, config in children:
             if model not in ("all", row["model"]):
                 continue
-            objective = experiment.models[row["target"]]
             is_candidate = row["model"] == p2_train.CANDIDATE_NAME
             estimator = objective.candidate if is_candidate else objective.dummy
-            title = f"{row['target_name']} · {row['model']}"
+            title = f"{row['target_name']} · {row['run_name']}"
 
-            with mlflow.start_run(
-                run_name=p2_run_name(row["target_name"], row["model"]), nested=True
-            ):
-                mlflow.set_tags(
-                    {**tags, "objective": row["target_name"], "model_name": row["model"]}
-                )
-                mlflow.log_params(
+            with mlflow.start_run(run_name=row["run_name"], nested=True):
+                log_child_metadata(
+                    child_tags(tags, row["model"], row["stage"], objective=row["target_name"]),
                     {
                         **shared_params,
                         **P2_MODEL_PARAMS[row["model"]],
-                        **(candidate_params if is_candidate else {}),
-                    }
-                )
-                mlflow.log_input(dataset, context="training")
-                mlflow.log_metrics(
+                        **({**p2_train.CANDIDATE_PARAMS, **config} if is_candidate else {}),
+                    },
                     {
                         **{f"val_{name}": row[name] for name in P2_VALIDATION_METRICS},
                         "train_positive_prevalence": objective.training_prevalence,
                         "fit_seconds": row["fit_seconds"],
                         "evaluation_seconds": row["evaluation_seconds"],
-                    }
+                    },
+                    dataset,
+                    manifest,
                 )
 
                 mlflow.log_dict(
@@ -570,12 +793,7 @@ def run_p2(
                     "evaluation/precision_recall.png",
                 )
 
-                mlflow.sklearn.log_model(
-                    estimator,
-                    name="model",
-                    input_example=validation_features[:5],
-                    skops_trusted_types=HGB_TRUSTED_TYPES if is_candidate else None,
-                )
+                log_signed_model(estimator, validation_features[:5], row["model"])
 
     logger.success("Runs P2 registrados en MLflow.")
     return metrics
@@ -822,6 +1040,27 @@ def train_command(
         metrics = run_p2(hgb_params=hgb_params, model=model)
     else:
         metrics = run_p3(k=k or None, max_k=max_k, model=model)
+    logger.info(f"Métricas {question.upper()}:\n{metrics.to_string(index=False)}")
+
+
+@app.command("search")
+def search_command(
+    question: str = typer.Option(..., help="Pregunta a explorar: p1 o p2."),
+    learning_rates: str = typer.Option(
+        ",".join(map(str, SEARCH_LEARNING_RATES)), help="Valores de learning_rate, con comas."
+    ),
+    max_leaf_nodes: str = typer.Option(
+        ",".join(map(str, SEARCH_MAX_LEAF_NODES)), help="Valores de max_leaf_nodes, con comas."
+    ),
+):
+    """Buscar hiperparámetros de HistGradientBoosting: un run hijo por combinación."""
+    question = question.lower()
+    if question not in ("p1", "p2"):
+        raise typer.BadParameter(f"Pregunta no reconocida: {question}. Usa p1 o p2.")
+
+    grid = parse_search_grid(learning_rates, max_leaf_nodes)
+    run = run_p1 if question == "p1" else run_p2
+    metrics = run(search_grid=grid)
     logger.info(f"Métricas {question.upper()}:\n{metrics.to_string(index=False)}")
 
 

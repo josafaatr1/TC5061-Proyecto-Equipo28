@@ -97,6 +97,11 @@ mlflow-p3:
 mlflow-train:
 	mlflow run . -e train -P question=$(QUESTION) --env-manager local
 
+## Search hyperparameters for one question with MLflow (QUESTION=p1|p2)
+.PHONY: mlflow-search
+mlflow-search:
+	mlflow run . -e search -P question=$(QUESTION) --env-manager local
+
 ## Register the best models and update the champion alias
 .PHONY: mlflow-register
 mlflow-register:

@@ -39,6 +39,7 @@ NOTEBOOKS_DIR = PROJ_ROOT / "notebooks"
 # Valores por defecto del entry point `ingest` (deben coincidir con MLproject).
 INGEST_YEAR = int(START_DATE[:4])
 SOURCES_MANIFEST = REFERENCES_DIR / "mibici_sources_2025.csv"
+DATA_INVENTORY = REFERENCES_DIR / "mibici_inventory_2025.csv"
 
 # Hiperparámetros por defecto del entry point `train` (deben coincidir con MLproject).
 # P1 y P2 comparten los de HistGradientBoosting; P3 elige k entre 2 y P3_MAX_K.
@@ -51,6 +52,11 @@ HGB_PARAMS = {
 }
 P3_MAX_K = 8
 P3_N_INIT = 10
+
+# Búsqueda del entry point `search` (deben coincidir con MLproject): un run hijo
+# por cada combinación de learning_rate y max_leaf_nodes de HistGradientBoosting.
+SEARCH_LEARNING_RATES = (0.05, 0.1, 0.2)
+SEARCH_MAX_LEAF_NODES = (15, 31, 63)
 
 # MLflow: experimento del equipo y alias del modelo en producción.
 MLFLOW_EXPERIMENT_NAME = os.getenv("MLFLOW_EXPERIMENT_NAME", "mibici-equipo28")
