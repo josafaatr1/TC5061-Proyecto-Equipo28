@@ -759,3 +759,60 @@ def test_run_pipeline_executes_all_stages_in_order(
 
     assert executed_stages == ["download", "prepare", "build"]
     assert result == (observed_path, completed_path)
+ 
+
+def test_prepare_trips_exactly_one_hour_is_not_long():
+    """Un viaje de exactamente una hora no debe clasificarse como largo."""
+    df = pd.DataFrame(
+        {
+            "Viaje_Id": [1],
+            "Usuario_Id": [100],
+            "Genero": ["M"],
+            "Año_de_nacimiento": [1990],
+            "Inicio_del_viaje": ["2025-01-01 08:00:00"],
+            "Fin_del_viaje": ["2025-01-01 09:00:00"],
+            "Origen_Id": [10],
+            "Destino_Id": [20],
+        }
+    )
+
+    result = prepare_trips(df)
+
+    assert result.loc[0, "duration_seconds"] == 3600
+    assert not result.loc[0, "is_long_trip"]
+
+
+def test_prepare_trips_invalid_timestamp():
+    """Identificar fechas inválidas y duraciones que no pueden calcularse."""
+    df = pd.DataFrame(
+        {
+            "Viaje_Id": [1],
+            "Usuario_Id": [100],
+            "Genero": ["M"],
+            "Año_de_nacimiento": [1990],
+            "Inicio_del_viaje": ["fecha_invalida"],
+            "Fin_del_viaje": ["2025-01-01 09:00:00"],
+            "Origen_Id": [10],
+            "Destino_Id": [20],
+        }
+    )
+
+    result = prepare_trips(df)
+
+    assert result.loc[0, "has_invalid_timestamp"]
+    assert pd.isna(result.loc[0, "duration_seconds"])
+    assert not result.loc[0, "has_nonpositive_duration"]
+    assert not result.loc[0, "is_long_trip"]
+
+
+def test_prepare_trips_missing_required_column():
+    """Rechazar datos que no contienen todas las columnas obligatorias."""
+    df = pd.DataFrame(
+        {
+            "Viaje_Id": [1],
+            "Inicio_del_viaje": ["2025-01-01 08:00:00"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="Faltan columnas obligatorias"):
+        prepare_trips(df)
