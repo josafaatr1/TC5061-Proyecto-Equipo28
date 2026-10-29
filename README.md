@@ -351,11 +351,35 @@ Ejecuta las tres etapas anteriores en orden. Requiere conexión a Internet para 
 
 ### 8.5. Ejecutar pruebas automatizadas
 
+El proyecto utiliza PyTest para verificar el procesamiento de datos, la agregación horaria y el comportamiento de los modelos. Las pruebas se encuentran en la carpeta `tests/`.
+
+Para ejecutar todas las pruebas desde la raíz del repositorio:
+
+```bash
+python -m pytest tests/ -v
+```
+
+Para ejecutar únicamente las pruebas de procesamiento de datos:
+
 ```bash
 python -m pytest tests/test_data.py -v
 ```
 
-La implementación cuenta con 24 pruebas aprobadas, que verifican la lectura, validación, transformación, agregación y orquestación del pipeline.
+Para ejecutar únicamente las pruebas de modelado:
+
+```bash
+python -m pytest tests/test_modeling.py -v
+```
+
+Las pruebas cubren casos normales y casos límite, incluyendo fechas inválidas, columnas requeridas faltantes y la reproducibilidad del entrenamiento. Esta última se verifica comparando las predicciones de dos modelos entrenados con los mismos datos y la misma semilla.
+
+La ejecución completa permite identificar fallos en las pruebas automatizadas antes de integrar cambios al repositorio.
+
+### Evidencia de ejecución
+
+La suite completa de pruebas se ejecutó correctamente mediante PyTest: 124 pruebas aprobadas.
+
+![Resultados de PyTest](docs/evidencias/pytest_resultados.png)
 
 ### 8.6. Experimentación
 
