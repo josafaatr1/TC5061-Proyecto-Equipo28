@@ -816,3 +816,26 @@ def test_prepare_trips_missing_required_column():
 
     with pytest.raises(ValueError, match="Faltan columnas obligatorias"):
         prepare_trips(df)
+
+
+def test_aggregate_station_hourly_ignores_invalid_timestamps():
+    """Ignorar fechas inválidas sin perder los movimientos válidos."""
+    trips = pd.DataFrame(
+        {
+            "origin_station_id": [2, 3],
+            "destination_station_id": [3, 2],
+            "started_at": pd.to_datetime(
+                ["2025-01-01 08:10:00", None]
+            ),
+            "ended_at": pd.to_datetime(
+                [None, "2025-01-01 09:20:00"]
+            ),
+        }
+    )
+
+    result = aggregate_station_hourly(trips)
+
+    assert result["departures"].sum() == 1
+    assert result["arrivals"].sum() == 1
+    assert result.loc[result["station_id"] == 2, "departures"].sum() == 1
+    assert result.loc[result["station_id"] == 2, "arrivals"].sum() == 1
