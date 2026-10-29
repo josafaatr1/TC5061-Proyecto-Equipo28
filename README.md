@@ -417,7 +417,7 @@ chore: initialize MiBici project structure
 |---|---|
 | Iván Fernando García Nuñez | MLOps, seguimiento de experimentos con MLflow e integración del proyecto. |
 | Anthony Gerardo Gutarra Sánchez | Modelos de regresión (P1) y clasificación (P2). |
-| Miguel Ángel Lara López | Análisis exploratorio y clustering de estaciones (P3). |
+| Miguel Ángel Lara López | Análisis exploratorio y clustering de estaciones (P3) y pruebas unitarias con PyTest|
 | Josafat Misael Rodríguez Nieto | Ingeniería de datos, ingesta, validación, procesamiento y arquitectura de datos. |
 
 ## 11. Documentación
