@@ -439,3 +439,19 @@ def test_run_baselines_integrates_synthetic_2025_data():
     }
     assert metrics["n_evaluated"].gt(0).all()
     assert metrics[["mae", "rmse"]].notna().all().all()
+
+
+
+def test_candidate_training_predictions_are_reproducible():
+    """Verificar que dos entrenamientos produzcan las mismas predicciones."""
+    hours = pd.date_range("2025-01-01", periods=240, freq="h")
+    supervised = prepare_supervised_data(make_hourly_data(hours))
+
+    first_model = train_candidate_model(supervised)
+    second_model = train_candidate_model(supervised)
+
+    features = first_model.feature_names_in_
+    first_predictions = first_model.predict(supervised.loc[:, features])
+    second_predictions = second_model.predict(supervised.loc[:, features])
+
+    np.testing.assert_array_equal(first_predictions, second_predictions)
