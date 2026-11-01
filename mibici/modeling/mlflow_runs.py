@@ -18,7 +18,7 @@ import hashlib
 from itertools import product
 from pathlib import Path
 import platform
-import subprocess
+import subprocess  # nosec B404: solo se usa para leer el commit de Git
 from time import perf_counter
 
 from loguru import logger
@@ -198,7 +198,8 @@ def read_train_validation_hourly(
 def git_commit() -> str | None:
     """Obtener el commit de Git ejecutado, si el proyecto está en un repositorio."""
     try:
-        result = subprocess.run(
+        # Comando fijo, sin shell ni entrada del usuario.
+        result = subprocess.run(  # nosec B603 B607
             ["git", "rev-parse", "HEAD"],
             cwd=PROJ_ROOT,
             capture_output=True,

@@ -361,6 +361,19 @@ La implementación cuenta con 24 pruebas aprobadas, que verifican la lectura, va
 
 Los modelos de regresión, clasificación y clustering se ejecutan mediante MLflow Projects y se registran en el experimento `mibici-equipo28` (sección 7). La búsqueda de hiperparámetros de P1 y P2 y la selección del mejor modelo están en [docs/entrega2_mlflow.md](docs/entrega2_mlflow.md).
 
+### 8.7. Seguridad
+
+Las credenciales y la configuración local van en variables de entorno: copia `.env.example` como `.env` (ignorado por Git) y ajusta los valores. Datos, modelos, artefactos de MLflow, llaves y archivos de credenciales están en `.gitignore`.
+
+Para revisar secretos, vulnerabilidades de dependencias y el código:
+
+```bash
+python -m pip install -r requirements-security.txt
+make security   # detect-secrets + pip-audit + bandit
+```
+
+Los resultados de la revisión están en [docs/seguridad.md](docs/seguridad.md).
+
 ## 9. Flujo de colaboración
 
 El equipo utilizará GitHub Flow.
@@ -398,7 +411,7 @@ chore: initialize MiBici project structure
 
 ## 11. Documentación
 
-Los documentos de formulación del problema y diseño de datos están en `references/`. El reporte de la segunda entrega (resultados, selección del mejor modelo, reproducción y evidencias) está en [docs/entrega2_mlflow.md](docs/entrega2_mlflow.md).
+Los documentos de formulación del problema y diseño de datos están en `references/`. El reporte de la segunda entrega (resultados, selección del mejor modelo, reproducción y evidencias) está en [docs/entrega2_mlflow.md](docs/entrega2_mlflow.md). La revisión de seguridad está en [docs/seguridad.md](docs/seguridad.md).
 
 
 ## 12. Estado del proyecto

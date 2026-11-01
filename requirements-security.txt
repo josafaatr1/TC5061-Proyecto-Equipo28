@@ -1,0 +1,4 @@
+# Herramientas de análisis de seguridad (no son dependencias del proyecto).
+bandit==1.9.4
+detect-secrets==1.5.0
+pip-audit==2.10.1

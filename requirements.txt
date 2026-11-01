@@ -2,7 +2,7 @@ ipython==9.17.1
 jupyterlab==4.6.4
 loguru==0.7.3
 matplotlib==3.11.2
-mlflow==3.17.0
+mlflow==3.17.2
 notebook==7.6.3
 numpy==2.5.4
 pandas==3.0.6

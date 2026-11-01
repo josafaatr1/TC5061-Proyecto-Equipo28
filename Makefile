@@ -49,6 +49,15 @@ test:
 	python -m pytest tests
 
 
+## Run security checks (secrets, dependency CVEs, static analysis)
+.PHONY: security
+security:
+	detect-secrets scan --exclude-lines '"image/png":' $$(git ls-files) \
+		| $(PYTHON_INTERPRETER) -c "import json,sys; r=json.load(sys.stdin)['results']; print(r or 'detect-secrets: sin hallazgos'); sys.exit(bool(r))"
+	pip-audit -r requirements-lock.txt
+	bandit -r mibici
+
+
 ## Set up Python interpreter environment
 .PHONY: create_environment
 create_environment:

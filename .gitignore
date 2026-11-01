@@ -225,3 +225,21 @@ models/*
 # Archivos locales de bases de datos
 *.sqlite
 *.sqlite3
+# Entornos virtuales adicionales (p. ej. .venv-security)
+.venv*/
+
+# Llaves, certificados y credenciales
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+credentials*.json
+service-account*.json
+secrets/
+.secrets*
+!.secrets.baseline
+
+# Reportes locales de seguridad
+reports/security/
