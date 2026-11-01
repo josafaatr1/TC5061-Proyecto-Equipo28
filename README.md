@@ -438,3 +438,18 @@ Los documentos de formulación del problema y diseño de datos están en `refere
 **MLOps:** Los entry points de MLflow Projects (`ingest`, `train`, `search`, `register`, entre otros) se ejecutan contra un servidor con SQLite. Los modelos mejores de P1, P2 (uno por objetivo) y P3 están en el Model Registry con el alias `champion`.
 
 **Documentación:** Fuentes de datos, pipeline, resultados de la búsqueda, selección del mejor modelo y evidencias en [docs/entrega2_mlflow.md](docs/entrega2_mlflow.md). Pendiente integrar la arquitectura.
+
+## Auditoría de seguridad
+
+El proyecto incluye una revisión básica de credenciales y archivos sensibles, así como un análisis estático del código Python mediante Bandit.
+
+Para ejecutar el análisis desde la raíz del repositorio:
+
+```bash
+python -m pip install bandit==1.9.4
+python -m bandit -r mibici/ -f txt
+```
+
+El análisis inicial examinó 4,072 líneas de código y reportó tres hallazgos de severidad baja, sin hallazgos medios ni altos. Los resultados y su evaluación se documentan en [reports/security/README.md](reports/security/README.md).
+
+La evidencia completa se encuentra en [reports/security/bandit_report.txt](reports/security/bandit_report.txt).
