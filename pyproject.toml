@@ -17,6 +17,9 @@ classifiers = [
 ]
 requires-python = "~=3.14.0"
 
+[project.optional-dependencies]
+validation = ["deepchecks==0.19.1", "setuptools==80.10.2"]
+
 
 [tool.ruff]
 line-length = 99
@@ -29,4 +32,3 @@ extend-select = ["I"]  # Habilitar la ordenación de importaciones
 [tool.ruff.lint.isort]
 known-first-party = ["mibici"]
 force-sort-within-sections = true
-
