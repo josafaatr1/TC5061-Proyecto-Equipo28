@@ -3,8 +3,6 @@
 import numpy as np
 import pandas as pd
 import pytest
-from tests.test_modeling import make_hourly_data
-from tests.test_p2_targets import make_catalog, make_hourly
 
 from mibici.modeling.evaluate import p1_cohorts, regression_metrics
 from mibici.modeling.p2_targets import (
@@ -15,6 +13,7 @@ from mibici.modeling.p2_targets import (
     build_p2_test_dataset,
     calculate_pressure_windows,
 )
+from tests.factories import make_catalog, make_hourly, make_hourly_data
 
 
 def test_regression_metrics_match_manual_values():
