@@ -12,57 +12,7 @@ from mibici.features import FLOW_COLUMNS, LAG_HOURS, ROLLING_WINDOWS
 from mibici.modeling import p2_train
 from mibici.modeling.p2_catalog import CATALOG_FILENAME, PROVENANCE_FILENAME
 from mibici.modeling.p2_targets import TARGET_BIKE_COLUMN, TARGET_DOCK_COLUMN
-
-
-def make_labeled_data(include_test: bool = True) -> pd.DataFrame:
-    """Crear train, validation y opcionalmente test con clases desbalanceadas."""
-    records = []
-    partitions = (
-        ("train", pd.date_range("2025-08-01", periods=240, freq="h")),
-        ("validation", pd.date_range("2025-09-01", periods=120, freq="h")),
-    )
-    predictor_columns = p2_train.PREDICTOR_COLUMNS
-
-    for partition, hours in partitions:
-        for index, hour in enumerate(hours):
-            row = {
-                "station_id": 11,
-                "hour": hour,
-                "partition": partition,
-                TARGET_BIKE_COLUMN: int(index % 10 == 0),
-                TARGET_DOCK_COLUMN: int(index % 13 == 0),
-            }
-            for column in predictor_columns:
-                if column == "hour_of_day":
-                    row[column] = hour.hour
-                elif column == "day_of_week":
-                    row[column] = hour.dayofweek
-                elif column == "month":
-                    row[column] = hour.month
-                elif column == "is_weekend":
-                    row[column] = hour.dayofweek >= 5
-                else:
-                    row[column] = float((index % 17) - 8)
-            row["departures_lag_168h"] = np.nan if index < 5 else row["departures_lag_168h"]
-            row["bike_pressure_ratio"] = 999.0
-            row["dock_pressure_ratio"] = 999.0
-            row["future_departures"] = 999.0
-            records.append(row)
-
-    if include_test:
-        test_row = records[-1].copy()
-        test_row.update(
-            {
-                "station_id": 11,
-                "hour": pd.Timestamp("2025-11-01"),
-                "partition": "test",
-                TARGET_BIKE_COLUMN: 9,
-                TARGET_DOCK_COLUMN: 9,
-                "departures_lag_1h": np.inf,
-            }
-        )
-        records.append(test_row)
-    return pd.DataFrame(records)
+from tests.factories import make_labeled_data
 
 
 def make_hourly_for_reproduction() -> tuple[pd.DataFrame, pd.DataFrame]:

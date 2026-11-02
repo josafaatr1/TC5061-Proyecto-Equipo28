@@ -86,7 +86,11 @@ TC5061-Proyecto-Equipo28/
 ├── references/           # Manifiestos de datos, handoff P1/P2 y auditoría del catálogo
 ├── reports/
 │   └── figures/          # Figuras y visualizaciones
-├── tests/                # Pruebas del código
+├── tests/                # Pruebas (misma estructura que mibici/)
+│   ├── conftest.py       # Fixtures compartidas (tracking store temporal de MLflow)
+│   ├── factories.py      # Datos sintéticos reutilizados por varias pruebas
+│   ├── test_*.py         # Pruebas de mibici/*.py (dataset, features, clustering, tracking)
+│   └── modeling/         # Pruebas de mibici/modeling/*.py
 ├── .gitignore            # Exclusiones de Git
 ├── Makefile              # Atajos para los entry points de MLflow
 ├── MLproject             # Entry points de MLflow Projects
@@ -396,15 +400,27 @@ Ejecuta las tres etapas anteriores en orden. Requiere conexión a Internet para 
 
 ### 8.5. Ejecutar pruebas automatizadas
 
-El proyecto utiliza PyTest para verificar el procesamiento de datos, la agregación horaria y el comportamiento de los modelos. Las pruebas se encuentran en la carpeta `tests/`.
+El proyecto utiliza PyTest para verificar el procesamiento de datos, la agregación horaria y el comportamiento de los modelos. Todas las pruebas están en la carpeta `tests/`, organizada igual que el paquete `mibici/`: cada módulo tiene su archivo `test_<módulo>.py`.
 
-Para ejecutar todas las pruebas desde la raíz del repositorio:
-
-```bash
-python -m pytest tests/ -v
+```text
+tests/
+├── conftest.py           # Fixtures compartidas
+├── factories.py          # Datos sintéticos compartidos
+├── test_clustering.py    # mibici/clustering.py
+├── test_dataset.py       # mibici/dataset.py
+├── test_features.py      # mibici/features.py
+├── test_tracking.py      # mibici/tracking.py
+└── modeling/
+    ├── test_evaluate.py      # mibici/modeling/evaluate.py
+    ├── test_mlflow_runs.py   # mibici/modeling/mlflow_runs.py
+    ├── test_p2_catalog.py    # mibici/modeling/p2_catalog.py
+    ├── test_p2_targets.py    # mibici/modeling/p2_targets.py
+    ├── test_p2_train.py      # mibici/modeling/p2_train.py
+    ├── test_registry.py      # mibici/modeling/registry.py
+    └── test_train.py         # mibici/modeling/train.py
 ```
 
-Para ejecutar únicamente las pruebas de procesamiento de datos:
+Para ejecutar todas las pruebas, desde la raíz del repositorio, basta un solo comando (la configuración está en `pyproject.toml`):
 
 ```bash
 python -m pytest -q
