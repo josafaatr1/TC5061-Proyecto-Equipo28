@@ -83,7 +83,7 @@ export MLFLOW_EXPERIMENT_NAME=mibici-equipo28
 mlflow run . -e evaluate --env-manager local
 ```
 
-Duración observada: 84 s. Pruebas: `python -m pytest tests/test_evaluate.py tests/test_p2_targets.py`.
+Duración observada: 84 s. Pruebas: `pytest tests/modeling/test_evaluate.py tests/modeling/test_p2_targets.py`.
 
 ## 7. Identificadores y evidencias en MLflow (experimento `mibici-equipo28`)
 

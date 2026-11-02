@@ -4,8 +4,6 @@ import mlflow
 import numpy as np
 import pandas as pd
 import pytest
-from tests.test_modeling import make_hourly_data
-from tests.test_p2_train import make_labeled_data
 import yaml
 
 from mibici import clustering, config
@@ -30,6 +28,7 @@ from mibici.modeling.train import (
     split_chronologically,
     train_candidate_model,
 )
+from tests.factories import make_hourly_data, make_labeled_data
 
 MLPROJECT_PATH = PROJ_ROOT / "MLproject"
 

@@ -14,44 +14,7 @@ from mibici.modeling.train import (
     train_candidate_model,
     train_dummy_regressor,
 )
-
-
-def make_hourly_data(
-    hours: pd.DatetimeIndex,
-    departures: list[int] | None = None,
-    station_id: int = 1,
-) -> pd.DataFrame:
-    """Crear registros sintéticos con el esquema estación-hora del pipeline."""
-    departure_values = (
-        list(departures) if departures is not None else [index % 7 for index in range(len(hours))]
-    )
-    arrivals = [1] * len(hours)
-
-    return pd.DataFrame(
-        {
-            "station_id": station_id,
-            "hour": hours,
-            "departures": departure_values,
-            "arrivals": arrivals,
-            "net_flow": [
-                arrival - departure
-                for arrival, departure in zip(
-                    arrivals,
-                    departure_values,
-                    strict=True,
-                )
-            ],
-            "total_activity": [
-                arrival + departure
-                for arrival, departure in zip(
-                    arrivals,
-                    departure_values,
-                    strict=True,
-                )
-            ],
-            "is_observed_hour": [True] * len(hours),
-        }
-    )
+from tests.factories import make_hourly_data
 
 
 def make_evaluation_split(

@@ -17,50 +17,7 @@ from mibici.modeling.p2_targets import (
     calculate_pressure_windows,
     fit_pressure_thresholds,
 )
-
-
-def make_catalog(
-    station_ids: list[int],
-    capacities: list[float | None] | None = None,
-) -> pd.DataFrame:
-    """Crear un catálogo normalizable con capacidades sintéticas."""
-    capacity_values = capacities or [10.0] * len(station_ids)
-    return pd.DataFrame(
-        {
-            "id": station_ids,
-            "name": [f"station-{station_id}" for station_id in station_ids],
-            "latitude": [20.0] * len(station_ids),
-            "longitude": [-103.0] * len(station_ids),
-            "dpcapacity": capacity_values,
-        }
-    )
-
-
-def make_hourly(
-    records: list[tuple[int, pd.Timestamp, int, int]],
-    observed: list[bool] | None = None,
-) -> pd.DataFrame:
-    """Crear datos estación-hora consistentes con el esquema procesado."""
-    departures = [record[2] for record in records]
-    arrivals = [record[3] for record in records]
-    observed_values = observed or [True] * len(records)
-    return pd.DataFrame(
-        {
-            "station_id": [record[0] for record in records],
-            "hour": [record[1] for record in records],
-            "departures": departures,
-            "arrivals": arrivals,
-            "net_flow": [
-                arrival - departure
-                for arrival, departure in zip(arrivals, departures, strict=True)
-            ],
-            "total_activity": [
-                arrival + departure
-                for arrival, departure in zip(arrivals, departures, strict=True)
-            ],
-            "is_observed_hour": observed_values,
-        }
-    )
+from tests.factories import make_catalog, make_hourly
 
 
 def test_calculate_pressure_windows_handles_bike_dock_and_zero_flows():
