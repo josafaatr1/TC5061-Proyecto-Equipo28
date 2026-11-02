@@ -78,6 +78,7 @@ TC5061-Proyecto-Equipo28/
 │   ├── dataset.py        # Ingesta y preparación de datos
 │   ├── features.py       # Ingeniería de características
 │   ├── tracking.py       # Registro del pipeline de datos en MLflow
+│   ├── validation.py     # Integridad y drift de P1/P2 con Deepchecks
 │   ├── workflow.py       # Encadena los entry points bajo un run padre
 │   └── modeling/         # Modelos P1 y P2, runs de MLflow, búsqueda y Model Registry
 ├── models/               # Modelos generados localmente
@@ -142,6 +143,11 @@ Verificar la instalación:
 python -m pip check
 ```
 
+La integración de validación usa el extra `validation` de `mibici` (Deepchecks 0.19.1 y setuptools 80.10.2, requerido por `pkg_resources` en esta versión de Deepchecks). Ya está incluido en `requirements.txt`; para instalarlo por separado en un entorno existente:
+
+```bash
+python -m pip install -e ".[validation]"
+```
 
 ## 7. Ejecución con MLflow Projects
 
@@ -305,6 +311,45 @@ import mlflow
 model = mlflow.pyfunc.load_model("models:/mibici-p1-departures@champion")
 ```
 
+### 7.8. Validación de datos con Deepchecks
+
+Ejecuta la validación desde la raíz del repositorio:
+
+```bash
+python -m mibici.validation --output-dir reports/deepchecks
+```
+
+El comando genera `summary.json` y reportes HTML para:
+
+- P1: integridad de train, validation y test, además de drift de train contra validation y contra el test reservado.
+- P2: integridad de train y validation, más comparaciones independientes train/validation para `target_bike_pressure` y `target_dock_pressure`.
+
+El test de P1 solo se usa para informar integridad y drift: no se entrena ni selecciona ningún modelo con él. P2 excluye test y cada comparación incluye únicamente sus predictores históricos permitidos y la etiqueta que se está revisando, nunca la otra etiqueta. Los HTML usan un muestreo determinista de hasta 100,000 filas por partición; `summary.json` informa los conteos de filas y nulos calculados sobre los datos completos, incluidos los nulos de las características de rezago. Cada entrada de `reports` identifica las particiones, el tamaño de muestra, los chequeos ejecutados y excluidos, los chequeos que no pasaron con sus detalles y los errores de ejecución. Nulos en claves o etiquetas, infinitos y claves `station_id-hour` duplicadas detienen la ejecución antes de escribir reportes.
+
+La selección de chequeos evita errores conocidos de Deepchecks 0.19.1 con el entorno fijado (pandas 3.0.6, NumPy 2.5.4 y scikit-learn 1.9.1): se excluyen `Outlier Sample Detection` (`quantile(interpolation)`), `Feature Feature Correlation` (`np.NaN`), `Train Test Samples Mix` (`DataFrame.applymap`) y `Multivariate Drift` (incompatibilidad de `__sklearn_tags__`). También se omite `Index Train Test Leakage`, porque `station_id` se repite intencionalmente y no es un índice único de observación. En P1, `New Label Train Test` no aplica a una etiqueta de regresión; en la integridad conjunta de P2 no se designa una de las dos etiquetas como objetivo. Las particiones comparadas sí incluyen `hour` como metadato temporal para ejecutar los chequeos de solapamiento de fechas.
+
+Se pueden sustituir las rutas de entrada y salida:
+
+```bash
+python -m mibici.validation --p1-input data/processed/station_hourly_2025_complete.parquet --p2-input data/processed/p2_targets_2025_train_validation.parquet --output-dir reports/deepchecks
+```
+
+Si faltan los archivos de entrada, genera el dataset horario de P1 con `mlflow run . -e ingest --env-manager local`. Para P2, ejecuta `mlflow run . -e p2_catalog --env-manager local` y luego `mlflow run . -e p2_targets --env-manager local`; la descarga del catálogo de estaciones requiere conexión a Internet.
+
+#### Evidencia de ejecución local
+
+Validación completa ejecutada el 1 de noviembre de 2026 con los Parquets locales. Se generaron nueve HTML y un resumen JSON; los reportes usaron hasta 100,000 filas por partición. No hubo errores de ejecución en los chequeos seleccionados.
+
+![Resumen de DeepChecks: nueve reportes generados y cero errores de ejecución](docs/evidence/deepchecks-results.png)
+
+| Reportes | Resultado observado |
+|---|---|
+| Integridad P1 (train, validation, test) | 9 chequeos por partición, 0 condiciones no aprobadas y 0 errores |
+| Integridad P2 (train, validation) | 7 chequeos por partición, 0 condiciones no aprobadas y 0 errores |
+| Drift P1 (train/validation y train/test) | 8 chequeos por comparación; `Feature Drift` señaló `month` en ambas. `Label Drift` pasó con KS 0.02 y 0.01, respectivamente |
+| Drift P2 (una comparación por etiqueta) | 9 chequeos por comparación; `Feature Drift` señaló `month` en ambas. `Label Drift` pasó con Cramer's V 0.00622 y 0.00634 |
+
+El resumen de datos completos registró 2,137,920 filas train, 537,640 validation y 536,981 test para P1. Para cada etiqueta P2 registró 2,137,182 filas train y 536,904 validation. No se encontraron nulos en claves o etiquetas, infinitos ni claves estación-hora duplicadas. En cada grupo de features `departures`, `arrivals` y `net_flow`, las columnas de rezago de 1h/24h/168h tienen 369/8,856/61,992 nulos en train y 1/24/168 en validation; P1 test también tiene 1/24/168. Las medias móviles P1 de 24h y 168h tienen 8,856/61,992 nulos en train y 24/168 en validation y test. El hallazgo de drift en `month` se reporta para revisión, no se oculta como error de ejecución.
 
 ## 8. Pipeline reproducible de ingeniería de datos
 
@@ -378,25 +423,22 @@ tests/
 Para ejecutar todas las pruebas, desde la raíz del repositorio, basta un solo comando (la configuración está en `pyproject.toml`):
 
 ```bash
-pytest          # o: make test
+python -m pytest -q
 ```
 
-Para ejecutar solo una parte de la suite:
+Pytest descubre los archivos `tests/test_*.py` desde la raíz. La suite cubre casos normales y límite para datos, features, modelos, evaluación, etiquetas P2 y los reportes de Deepchecks. Incluye pruebas de reproducibilidad: P1 ajusta el candidato dos veces y compara métricas con tiempos excluidos; P2 verifica la semilla fija y compara exactamente las probabilidades entre ejecuciones.
+
+Para repetir las pruebas enfocadas de Deepchecks y reproducibilidad:
 
 ```bash
-pytest tests/test_dataset.py -v   # procesamiento de datos
-pytest tests/modeling -v          # modelado (P1, P2, MLflow y Model Registry)
+python -m pytest tests/test_validation.py tests/modeling/test_train.py::test_candidate_evaluation_is_deterministic_and_ignores_test_by_default tests/modeling/test_p2_train.py::test_train_objective_uses_balanced_weights_and_explicit_seed tests/modeling/test_p2_train.py::test_run_validation_uses_same_rows_and_is_reproducible -v
 ```
 
-Las pruebas cubren casos normales y casos límite, incluyendo fechas inválidas, columnas requeridas faltantes y la reproducibilidad del entrenamiento. Esta última se verifica comparando las predicciones de dos modelos entrenados con los mismos datos y la misma semilla.
+Evidencia local: PyTest ejecutó 126 pruebas y todas pasaron; la salida registró 112 advertencias y 612.39 segundos. La captura muestra el resultado de `python -m pytest -q`.
 
-La ejecución completa permite identificar fallos en las pruebas automatizadas antes de integrar cambios al repositorio.
+![PyTest: 126 pruebas aprobadas](docs/evidence/pytest-126-passed.png)
 
-### Evidencia de ejecución
-
-La suite completa de pruebas se ejecutó correctamente mediante PyTest: 124 pruebas aprobadas.
-
-![Resultados de PyTest](docs/evidencias/pytest_resultados.png)
+Después de la corrección de compatibilidad de DeepChecks, el comando enfocado anterior ejecutó 10 pruebas y obtuvo 10 aprobadas, 1 advertencia y 19.26 segundos; `python -m pytest --collect-only -q` encontró 126 pruebas en 4.00 segundos. No se repitió la suite completa para evitar volver a ejecutar sus pruebas de MLflow.
 
 ### 8.6. Experimentación
 
