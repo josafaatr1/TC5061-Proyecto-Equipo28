@@ -89,7 +89,7 @@ TC5061-Proyecto-Equipo28/
 ├── tests/                # Pruebas (misma estructura que mibici/)
 │   ├── conftest.py       # Fixtures compartidas (tracking store temporal de MLflow)
 │   ├── factories.py      # Datos sintéticos reutilizados por varias pruebas
-│   ├── test_*.py         # Pruebas de mibici/*.py (dataset, features, clustering, tracking)
+│   ├── test_*.py         # Pruebas de mibici/*.py (dataset, features, clustering, tracking, validation)
 │   └── modeling/         # Pruebas de mibici/modeling/*.py
 ├── .gitignore            # Exclusiones de Git
 ├── Makefile              # Atajos para los entry points de MLflow
@@ -410,6 +410,7 @@ tests/
 ├── test_dataset.py       # mibici/dataset.py
 ├── test_features.py      # mibici/features.py
 ├── test_tracking.py      # mibici/tracking.py
+├── test_validation.py    # mibici/validation.py
 └── modeling/
     ├── test_evaluate.py      # mibici/modeling/evaluate.py
     ├── test_mlflow_runs.py   # mibici/modeling/mlflow_runs.py
@@ -423,24 +424,47 @@ tests/
 Para ejecutar todas las pruebas, desde la raíz del repositorio, basta un solo comando (la configuración está en `pyproject.toml`):
 
 ```bash
-python -m pytest -q
+pytest          # o: make test
 ```
 
-Pytest descubre los archivos `tests/test_*.py` desde la raíz. La suite cubre casos normales y límite para datos, features, modelos, evaluación, etiquetas P2 y los reportes de Deepchecks. Incluye pruebas de reproducibilidad: P1 ajusta el candidato dos veces y compara métricas con tiempos excluidos; P2 verifica la semilla fija y compara exactamente las probabilidades entre ejecuciones.
+Pytest descubre los archivos `test_*.py` dentro de `tests/` y sus subcarpetas. La suite cubre casos normales y límite para datos, features, modelos, evaluación, etiquetas P2 y los reportes de Deepchecks. Incluye pruebas de reproducibilidad: P1 ajusta el candidato dos veces y compara métricas con tiempos excluidos; P2 verifica la semilla fija y compara exactamente las probabilidades entre ejecuciones.
+
+Para ejecutar solo una parte de la suite:
+
+```bash
+pytest tests/test_dataset.py -v      # procesamiento de datos
+pytest tests/test_validation.py -v   # reportes de Deepchecks
+pytest tests/modeling -v             # modelado (P1, P2, MLflow y Model Registry)
+```
 
 Para repetir las pruebas enfocadas de Deepchecks y reproducibilidad:
 
 ```bash
-python -m pytest tests/test_validation.py tests/modeling/test_train.py::test_candidate_evaluation_is_deterministic_and_ignores_test_by_default tests/modeling/test_p2_train.py::test_train_objective_uses_balanced_weights_and_explicit_seed tests/modeling/test_p2_train.py::test_run_validation_uses_same_rows_and_is_reproducible -v
+pytest tests/test_validation.py tests/modeling/test_train.py::test_candidate_evaluation_is_deterministic_and_ignores_test_by_default tests/modeling/test_p2_train.py::test_train_objective_uses_balanced_weights_and_explicit_seed tests/modeling/test_p2_train.py::test_run_validation_uses_same_rows_and_is_reproducible -v
 ```
 
-Evidencia local: PyTest ejecutó 126 pruebas y todas pasaron; la salida registró 112 advertencias y 612.39 segundos. La captura muestra el resultado de `python -m pytest -q`.
+Evidencia local: con la estructura actual de `tests/`, PyTest ejecutó 131 pruebas y todas pasaron; la salida registró 112 advertencias (casi todas de MLflow, scikit-learn y Deepchecks) y 239.59 segundos. La captura muestra el resultado de `python -m pytest -q`; se omite la parte intermedia del resumen de advertencias y la ruta del entorno virtual aparece abreviada como `$VENV`.
 
-![PyTest: 126 pruebas aprobadas](docs/evidence/pytest-126-passed.png)
+![PyTest: 131 pruebas aprobadas](docs/evidence/pytest-131-passed.png)
 
-Después de la corrección de compatibilidad de DeepChecks, el comando enfocado anterior ejecutó 10 pruebas y obtuvo 10 aprobadas, 1 advertencia y 19.26 segundos; `python -m pytest --collect-only -q` encontró 126 pruebas en 4.00 segundos. No se repitió la suite completa para evitar volver a ejecutar sus pruebas de MLflow.
+El comando enfocado de Deepchecks y reproducibilidad ejecutó 10 pruebas y obtuvo 10 aprobadas, con 1 advertencia, en 15.77 segundos.
 
-### 8.6. Experimentación
+### 8.6. Chequeos de calidad y seguridad
+
+Además de las pruebas, el repositorio tiene tres chequeos que se ejecutan desde la raíz del repositorio con el entorno activado:
+
+| Chequeo | Comando | Qué revisa | Detalle y evidencia |
+|---|---|---|---|
+| Pruebas | `pytest` (o `make test`) | Toda la suite de `tests/` | Sección 8.5 |
+| Estilo y lint | `make lint` | Formato (`ruff format --check`) y reglas de Ruff sobre `mibici/` | Esta sección |
+| Calidad de datos | `python -m mibici.validation --output-dir reports/deepchecks` | Integridad y drift de P1 y P2 con Deepchecks | Sección 7.8 |
+| Seguridad | `python -m bandit -r mibici/ -f txt` | Análisis estático del código Python con Bandit | Sección 13 |
+
+Ruff ya viene en `requirements.txt`. `make lint` solo revisa; si falla por formato, `make format` aplica las correcciones automáticas. Evidencia de una ejecución correcta:
+
+![make lint: 18 archivos con formato correcto y todas las reglas de Ruff aprobadas](docs/evidence/ruff-lint-passed.png)
+
+### 8.7. Experimentación
 
 Los modelos de regresión, clasificación y clustering se ejecutan mediante MLflow Projects y se registran en el experimento `mibici-equipo28` (sección 7). La búsqueda de hiperparámetros de P1 y P2 y la selección del mejor modelo están en [docs/entrega2_mlflow.md](docs/entrega2_mlflow.md).
 
@@ -498,7 +522,7 @@ Los documentos de formulación del problema y diseño de datos están en `refere
 
 **Documentación:** Fuentes de datos, pipeline, resultados de la búsqueda, selección del mejor modelo y evidencias en [docs/entrega2_mlflow.md](docs/entrega2_mlflow.md). Pendiente integrar la arquitectura.
 
-## Auditoría de seguridad
+## 13. Auditoría de seguridad
 
 El proyecto incluye una revisión básica de credenciales y archivos sensibles, así como un análisis estático del código Python mediante Bandit.
 
@@ -509,6 +533,12 @@ python -m pip install bandit==1.9.4
 python -m bandit -r mibici/ -f txt
 ```
 
-El análisis inicial examinó 4,072 líneas de código y reportó tres hallazgos de severidad baja, sin hallazgos medios ni altos. Los resultados y su evaluación se documentan en [reports/security/README.md](reports/security/README.md).
+Bandit termina con código de salida 1 cuando reporta hallazgos, aunque el análisis se haya completado correctamente.
 
-La evidencia completa se encuentra en [reports/security/bandit_report.txt](reports/security/bandit_report.txt).
+El análisis más reciente (que ya incluye `mibici/validation.py`) examinó 4,550 líneas de código y reportó tres hallazgos de severidad baja, sin hallazgos medios ni altos. Los tres corresponden a la llamada a `git rev-parse HEAD` en `mibici/modeling/mlflow_runs.py` (B404, B603 y B607). Los resultados y su evaluación se documentan en [reports/security/README.md](reports/security/README.md).
+
+#### Evidencia de ejecución local
+
+![Bandit: 4,550 líneas analizadas, 3 hallazgos de severidad baja y ninguno medio o alto](docs/evidence/bandit-results.png)
+
+La salida completa se encuentra en [reports/security/bandit_report.txt](reports/security/bandit_report.txt).

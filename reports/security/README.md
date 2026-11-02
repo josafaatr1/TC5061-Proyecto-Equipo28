@@ -15,9 +15,9 @@ Se ejecutaron búsquedas sobre los archivos rastreados por Git para identificar 
 ## 2. Análisis estático con Bandit
 
 **Herramienta:** Bandit 1.9.4  
-**Entorno:** Python 3.14.4, WSL  
+**Entorno:** Python 3.14.3, Linux  
 **Código analizado:** `mibici/`  
-**Líneas de código analizadas:** 4,072
+**Líneas de código analizadas:** 4,550
 
 Comando utilizado:
 
