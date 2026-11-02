@@ -431,7 +431,7 @@ Pytest descubre los archivos `tests/test_*.py` desde la raíz. La suite cubre ca
 Para repetir las pruebas enfocadas de Deepchecks y reproducibilidad:
 
 ```bash
-python -m pytest tests/test_validation.py tests/test_modeling.py::test_candidate_evaluation_is_deterministic_and_ignores_test_by_default tests/test_p2_train.py::test_train_objective_uses_balanced_weights_and_explicit_seed tests/test_p2_train.py::test_run_validation_uses_same_rows_and_is_reproducible -v
+python -m pytest tests/test_validation.py tests/modeling/test_train.py::test_candidate_evaluation_is_deterministic_and_ignores_test_by_default tests/modeling/test_p2_train.py::test_train_objective_uses_balanced_weights_and_explicit_seed tests/modeling/test_p2_train.py::test_run_validation_uses_same_rows_and_is_reproducible -v
 ```
 
 Evidencia local: PyTest ejecutó 126 pruebas y todas pasaron; la salida registró 112 advertencias y 612.39 segundos. La captura muestra el resultado de `python -m pytest -q`.
