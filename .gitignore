@@ -225,3 +225,25 @@ models/*
 # Archivos locales de bases de datos
 *.sqlite
 *.sqlite3
+
+# ==========================================
+# Seguridad - Credenciales y secretos
+# ==========================================
+
+# Claves privadas y certificados con clave privada
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# Archivos de credenciales locales
+credentials.json
+secrets.json
+secrets.yaml
+secrets.yml
+service-account*.json
+
+# Configuración local de herramientas
+.streamlit/secrets.toml
