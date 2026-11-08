@@ -1,30 +1,56 @@
-from pathlib import Path
+"""Utilities for loading and serving registered MLflow models."""
+
+import os
 
 from loguru import logger
-from tqdm import tqdm
-import typer
+import mlflow
+import mlflow.pyfunc
+import pandas as pd
 
-from mibici.config import MODELS_DIR, PROCESSED_DATA_DIR
-
-app = typer.Typer()
-
-
-@app.command()
-def main(
-    # ---- REPLACE DEFAULT PATHS AS APPROPRIATE ----
-    features_path: Path = PROCESSED_DATA_DIR / "test_features.csv",
-    model_path: Path = MODELS_DIR / "model.pkl",
-    predictions_path: Path = PROCESSED_DATA_DIR / "test_predictions.csv",
-    # -----------------------------------------
-):
-    # ---- REPLACE THIS WITH YOUR OWN CODE ----
-    logger.info("Performing inference for model...")
-    for i in tqdm(range(10), total=10):
-        if i == 5:
-            logger.info("Something happened for iteration 5.")
-    logger.success("Inference complete.")
-    # -----------------------------------------
+DEFAULT_MODEL_URI = os.getenv(
+    "MLFLOW_MODEL_URI",
+    "models:/mibici-p1-departures@champion",
+)
 
 
-if __name__ == "__main__":
-    app()
+def load_model(model_uri: str = DEFAULT_MODEL_URI):
+    """Load a registered MLflow model for inference.
+
+    Args:
+        model_uri: MLflow model URI, including its version or alias.
+
+    Returns:
+        Loaded MLflow PyFunc model.
+
+    Raises:
+        mlflow.exceptions.MlflowException: If the model cannot be loaded.
+    """
+    logger.info(f"Loading MLflow model: {model_uri}")
+
+    model = mlflow.pyfunc.load_model(model_uri)
+
+    logger.success(f"MLflow model loaded successfully: {model_uri}")
+    return model
+
+
+def predict(model, features: pd.DataFrame) -> list[float]:
+    """Generate predictions using a loaded MLflow model.
+
+    Args:
+        model: MLflow PyFunc model returned by load_model().
+        features: DataFrame containing the model's input features.
+
+    Returns:
+        Predicted departures as a list of floats.
+
+    Raises:
+        TypeError: If features is not a pandas DataFrame.
+        mlflow.exceptions.MlflowException: If the input violates
+            the registered model's signature.
+    """
+    if not isinstance(features, pd.DataFrame):
+        raise TypeError("features must be a pandas DataFrame")
+
+    predictions = model.predict(features)
+
+    return [float(value) for value in predictions]
