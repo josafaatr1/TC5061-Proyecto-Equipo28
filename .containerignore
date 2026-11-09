@@ -1,0 +1,41 @@
+# Contexto de construcción de la imagen de la API: solo se copian requirements-api.txt,
+# mibici/ y models/. Todo lo demás se excluye para que la construcción sea rápida y
+# la imagen no incluya datos, credenciales ni artefactos locales.
+
+# Control de versiones y editores
+.git/
+.gitignore
+.idea/
+.vscode/
+
+# Entornos virtuales y cachés
+.venv*/
+venv/
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Credenciales y configuración local
+.env
+.env.*
+*.pem
+*.key
+
+# Datos, tracking y reportes (no se necesitan para servir el modelo)
+data/
+mlruns/
+mlartifacts/
+mlflow.db
+reports/
+docs/
+notebooks/
+references/
+tests/
+
+# El propio Containerfile no forma parte de la imagen
+Containerfile
+Dockerfile
+.containerignore
+.dockerignore

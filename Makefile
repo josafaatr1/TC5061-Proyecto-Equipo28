@@ -7,6 +7,10 @@ PYTHON_VERSION = 3.14
 PYTHON_INTERPRETER = python
 export MLFLOW_EXPERIMENT_NAME ?= mibici-equipo28
 QUESTION ?= p1
+CONTAINER_ENGINE ?= podman
+IMAGE_NAME ?= mibici-api
+# Podman guarda por defecto en formato OCI, que descarta HEALTHCHECK; Docker no acepta --format.
+BUILD_FLAGS ?= $(if $(filter podman,$(CONTAINER_ENGINE)),--format docker,)
 
 #################################################################################
 # COMMANDS                                                                      #
@@ -111,6 +115,24 @@ mlflow-register:
 .PHONY: mlflow-server
 mlflow-server:
 	mlflow server --backend-store-uri sqlite:///mlflow.db --artifacts-destination ./mlartifacts --host 127.0.0.1 --port 5000
+
+
+## Export the champion models served by the API from the Model Registry into models/
+.PHONY: export-models
+export-models:
+	$(PYTHON_INTERPRETER) -m mibici.api.export_models
+
+
+## Build the API container image (CONTAINER_ENGINE=podman|docker)
+.PHONY: image
+image:
+	$(CONTAINER_ENGINE) build $(BUILD_FLAGS) -t $(IMAGE_NAME) -f Containerfile .
+
+
+## Run the API container on port 8000 (CONTAINER_ENGINE=podman|docker)
+.PHONY: container-run
+container-run:
+	$(CONTAINER_ENGINE) run --rm -p 8000:8000 --name $(IMAGE_NAME) $(IMAGE_NAME)
 
 
 # Pendiente: descomentar junto con su entry point en MLproject.

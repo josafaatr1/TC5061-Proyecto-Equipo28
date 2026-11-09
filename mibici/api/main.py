@@ -1,23 +1,21 @@
-
-import os
 from contextlib import asynccontextmanager
+import os
 
+from fastapi import FastAPI, HTTPException
 import mlflow
 import mlflow.sklearn
 import pandas as pd
-from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from mibici.modeling.p2_train import PREDICTOR_COLUMNS
 
-
 # Configuración de MLflow
-mlflow.set_tracking_uri(
-    os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
-)
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"))
 
-BIKE_MODEL_URI = "models:/mibici-p2-bike-pressure@champion"
-DOCK_MODEL_URI = "models:/mibici-p2-dock-pressure@champion"
+# Ubicación de los modelos. Por defecto se cargan del Model Registry (alias champion);
+# la imagen de contenedor apunta estas variables a los modelos empaquetados en /app/models.
+BIKE_MODEL_URI = os.getenv("BIKE_MODEL_URI", "models:/mibici-p2-bike-pressure@champion")
+DOCK_MODEL_URI = os.getenv("DOCK_MODEL_URI", "models:/mibici-p2-dock-pressure@champion")
 
 models = {}
 
