@@ -121,19 +121,14 @@ En la ejecución verificada se seleccionó `hist_gradient_boosting_poisson`, con
 
 ### 5.3. Integración con el servicio REST
 
-La aplicación FastAPI debe recuperar el modelo utilizando:
+La integración de este documento corresponde al modelo P1 y se conserva como utilidad de inferencia. El servicio REST incorporado posteriormente sirve los dos modelos P2, no `mibici-p1-departures`:
 
 ```python
-model_uri = "models:/mibici-p1-departures@champion"
+bike_model_uri = "models:/mibici-p2-bike-pressure@champion"
+dock_model_uri = "models:/mibici-p2-dock-pressure@champion"
 ```
 
-Esta referencia permite utilizar el modelo seleccionado sin fijar una versión específica en el código.
-
-El servicio debe disponer de acceso al Model Registry y a los artefactos correspondientes. Cuando se utilice un servidor MLflow, la variable `MLFLOW_TRACKING_URI` deberá configurarse con una dirección accesible desde el entorno de ejecución.
-
-Para el despliegue mediante Docker o Podman, debe considerarse que `127.0.0.1` dentro de un contenedor hace referencia al propio contenedor y no necesariamente al equipo anfitrión.
-
-La estrategia de distribución de los artefactos y conectividad con MLflow deberá definirse durante la implementación del contenedor, asegurando que el modelo pueda recuperarse durante la inicialización del servicio.
+El despliegue actual exporta los alias `champion` y empaqueta los artefactos en la imagen. No requiere acceso al Registry durante la inferencia. El procedimiento, las diferencias de firma P1/P2 y los comandos están en la [sección 14 del README](../README.md#14-api-rest-p2-en-contenedor) y en el [informe de integración](api_validation.md).
 
 ## 6. Validación realizada
 
@@ -157,3 +152,5 @@ Se recomienda cargar el modelo una sola vez durante la inicialización del servi
 La validación de las solicitudes HTTP, los esquemas Pydantic y la serialización de respuestas corresponden a la implementación de FastAPI.
 
 La integración debe conservar la precisión numérica de las predicciones y gestionar los errores derivados de entradas incompatibles o de la falta de acceso al Model Registry.
+
+Estas recomendaciones tabulares corresponden a P1. Los modelos P2 verificados usan una firma tensorial `float32` de 15 columnas; la API respeta ese contrato y conserva la clasificación nativa del estimador.

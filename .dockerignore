@@ -1,0 +1,17 @@
+**
+!requirements-api.txt
+!mibici/
+!mibici/**/
+!mibici/**/*.py
+mibici/**/__pycache__/
+!models/
+models/*
+!models/p2-bike-pressure/
+!models/p2-bike-pressure/**
+!models/p2-dock-pressure/
+!models/p2-dock-pressure/**
+!models/metadata.json
+**/.env
+**/.env.*
+**/*.pem
+**/*.key

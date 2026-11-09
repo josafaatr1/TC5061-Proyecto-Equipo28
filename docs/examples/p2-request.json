@@ -1,0 +1,17 @@
+{
+  "hour_of_day": 8,
+  "day_of_week": 2,
+  "month": 11,
+  "is_weekend": false,
+  "departures_lag_1h": 1.0,
+  "departures_lag_24h": 2.0,
+  "departures_lag_168h": 1.0,
+  "arrivals_lag_1h": 1.0,
+  "arrivals_lag_24h": 2.0,
+  "arrivals_lag_168h": 1.0,
+  "net_flow_lag_1h": -1.0,
+  "net_flow_lag_24h": 0.0,
+  "net_flow_lag_168h": 1.0,
+  "departures_rolling_mean_24h": 1.5,
+  "departures_rolling_mean_168h": 1.2
+}
