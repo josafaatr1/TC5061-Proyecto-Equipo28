@@ -39,3 +39,12 @@ Containerfile
 Dockerfile
 .containerignore
 .dockerignore
+
+models/*
+!models/p2-bike-pressure/
+!models/p2-dock-pressure/
+!models/metadata.json
+**/.env
+**/.env.*
+**/*.pem
+**/*.key

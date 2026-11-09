@@ -80,6 +80,7 @@ TC5061-Proyecto-Equipo28/
 │   ├── tracking.py       # Registro del pipeline de datos en MLflow
 │   ├── validation.py     # Integridad y drift de P1/P2 con Deepchecks
 │   ├── workflow.py       # Encadena los entry points bajo un run padre
+│   ├── api/              # Servicio REST P2 y exportación de modelos
 │   └── modeling/         # Modelos P1 y P2, runs de MLflow, búsqueda y Model Registry
 ├── models/               # Modelos generados localmente
 ├── notebooks/            # Exploración de datos
@@ -507,6 +508,8 @@ chore: initialize MiBici project structure
 
 Los documentos de formulación del problema y diseño de datos están en `references/`. El reporte de la segunda entrega (resultados, selección del mejor modelo, reproducción y evidencias) está en [docs/entrega2_mlflow.md](docs/entrega2_mlflow.md).
 
+El despliegue REST se describe en la sección 14; la auditoría y los resultados de integración están en [docs/api_validation.md](docs/api_validation.md). La integración histórica de inferencia P1 se conserva en [docs/mlflow_model_serving.md](docs/mlflow_model_serving.md).
+
 
 ## 12. Estado del proyecto
 
@@ -542,3 +545,216 @@ El análisis más reciente (que ya incluye `mibici/validation.py`) examinó 4,55
 ![Bandit: 4,550 líneas analizadas, 3 hallazgos de severidad baja y ninguno medio o alto](docs/evidence/bandit-results.png)
 
 La salida completa se encuentra en [reports/security/bandit_report.txt](reports/security/bandit_report.txt).
+
+## 14. API REST P2 en contenedor
+
+### 14.1. Propósito y arquitectura
+
+FastAPI recibe los 15 predictores históricos de una estación-hora y devuelve dos clasificaciones de presión proxy: falta de bicicletas (`bike`) y falta de anclajes (`dock`). No mide inventarios reales ni calcula los predictores a partir de una estación y una fecha.
+
+```text
+MLflow Registry -> export_models -> models/ + metadata.json -> imagen OCI
+Cliente HTTP -> FastAPI -> modelos P2 cargados al iniciar -> JSON
+```
+
+Los modelos se exportan una vez y se empaquetan en la imagen. El contenedor no necesita contactar MLflow durante la inferencia. Un cambio del alias requiere volver a exportar, construir y desplegar; no actualiza contenedores existentes.
+
+La inferencia por solicitud permite consultar una estación-hora sin esperar un proceso por lotes. La construcción de variables históricas sigue siendo responsabilidad del consumidor; para consultas masivas puede resultar más apropiado un proceso batch. No se han medido latencia ni capacidad de producción.
+
+| Objetivo | URI de origen | Carpeta exportada | Versión local verificada |
+|---|---|---|---|
+| Bicicletas | `models:/mibici-p2-bike-pressure@champion` | `models/p2-bike-pressure` | 1 |
+| Anclajes | `models:/mibici-p2-dock-pressure@champion` | `models/p2-dock-pressure` | 1 |
+
+Las versiones no están fijadas en código: [mibici/api/export_models.py](mibici/api/export_models.py) resuelve el alias y descarga esa versión explícita. `models/metadata.json` conserva nombre, alias, versión y run de origen. Los modelos y la base de datos están excluidos de Git; clonar el repositorio no los proporciona.
+
+### 14.2. Prerrequisitos y exportación
+
+Se requiere Python 3.14, el entorno de desarrollo de la sección 6, acceso al Registry y sus artefactos, y Podman o Docker con motor Linux activo. GNU Make es opcional: debajo se incluyen comandos equivalentes. Las dependencias de servicio están fijadas en [requirements-api.txt](requirements-api.txt); la imagen las instala automáticamente, sin incluir Jupyter, datos ni herramientas de entrenamiento.
+
+Para usar la API localmente, instalar también sus dependencias en un entorno virtual, nunca globalmente:
+
+```bash
+python -m pip install -r requirements-api.txt
+```
+
+Para las pruebas se necesitan `pytest` y `httpx` en el entorno de desarrollo (`python -m pip install pytest==9.1.1 httpx==0.28.1` si faltan). El servidor de Registry necesita MLflow completo, incluido en [requirements.txt](requirements.txt), no únicamente `mlflow-skinny`.
+
+Con el servidor de la sección 7.2 activo, configurar en la terminal de exportación:
+
+```bash
+export MLFLOW_TRACKING_URI=http://127.0.0.1:5000
+```
+
+En PowerShell:
+
+```powershell
+$env:MLFLOW_TRACKING_URI = "http://127.0.0.1:5000"
+$env:PYTHONUTF8 = "1"
+```
+
+Desde la raíz, con el entorno activado:
+
+```bash
+make export-models
+# Equivalente cuando no hay make:
+python -m mibici.api.export_models
+```
+
+Comprobar que existen `models/metadata.json`, `models/p2-bike-pressure/MLmodel`, `models/p2-dock-pressure/MLmodel` y sus respectivos `model.skops`. No sustituirlos por archivos con nombres inventados ni ejecutar el registro para cambiar versiones como parte del despliegue. Cargar únicamente modelos de un Registry de confianza.
+
+### 14.3. Construcción y ejecución
+
+Con Podman:
+
+```bash
+make image
+make container-run
+```
+
+Equivalentes explícitos, con el puerto limitado a localhost:
+
+```bash
+podman build --format docker -t mibici-api -f Containerfile .
+podman run --rm -p 127.0.0.1:8000:8000 --name mibici-api mibici-api
+```
+
+`--format docker` conserva el `HEALTHCHECK` en Podman. El target `container-run` original publica `8000:8000` en todas las interfaces; los comandos explícitos de esta sección limitan la exposición local.
+
+Alternativa Docker, verificada en esta entrega:
+
+```bash
+make image CONTAINER_ENGINE=docker
+make container-run CONTAINER_ENGINE=docker
+```
+
+Sin Make:
+
+```bash
+docker build -t mibici-api -f Containerfile .
+docker run --rm -p 127.0.0.1:8000:8000 --name mibici-api mibici-api
+```
+
+La ejecución queda en primer plano; realizar las consultas desde otra terminal. Para segundo plano añadir `-d`. Detener con `podman stop mibici-api` o `docker stop mibici-api`, según el motor utilizado.
+
+El [Containerfile](Containerfile) conserva la base fijada por digest, el usuario `app` (UID 10001), el puerto 8000 y un healthcheck que utiliza `PORT`. [.containerignore](.containerignore) y [.dockerignore](.dockerignore) excluyen datos, credenciales, cachés y modelos ajenos al servicio. No hacen falta montajes de la base de datos ni credenciales MLflow dentro del contenedor.
+
+### 14.4. Consultas y contrato
+
+Documentación interactiva: http://127.0.0.1:8000/docs. OpenAPI: http://127.0.0.1:8000/openapi.json.
+
+Los comandos siguientes son de una sola línea. En PowerShell utilizar `curl.exe` en lugar de `curl` para evitar el alias de Windows PowerShell.
+
+```bash
+curl -sS -i http://127.0.0.1:8000/health
+```
+
+Respuesta verificada, HTTP 200:
+
+```json
+{"status":"healthy","models_loaded":["bike","dock"]}
+```
+
+Entrada completa disponible en [docs/examples/p2-request.json](docs/examples/p2-request.json). Es una entrada sintética de prueba, no una observación histórica:
+
+```json
+{
+    "hour_of_day": 8,
+    "day_of_week": 2,
+    "month": 11,
+    "is_weekend": false,
+    "departures_lag_1h": 1.0,
+    "departures_lag_24h": 2.0,
+    "departures_lag_168h": 1.0,
+    "arrivals_lag_1h": 1.0,
+    "arrivals_lag_24h": 2.0,
+    "arrivals_lag_168h": 1.0,
+    "net_flow_lag_1h": -1.0,
+    "net_flow_lag_24h": 0.0,
+    "net_flow_lag_168h": 1.0,
+    "departures_rolling_mean_24h": 1.5,
+    "departures_rolling_mean_168h": 1.2
+}
+```
+
+```bash
+curl -sS -i -H "Content-Type: application/json" --data-binary "@docs/examples/p2-request.json" http://127.0.0.1:8000/predict
+```
+
+Respuesta real obtenida del contenedor con las versiones 1 exportadas:
+
+```json
+{
+    "predictions": {
+        "bike": {"prediction": 0, "probability": 0.3171913481120226},
+        "dock": {"prediction": 1, "probability": 0.5846188145068164}
+    },
+    "decision_threshold": 0.5
+}
+```
+
+`probability` es `P(clase=1)` de cada clasificador, no la confianza de la clase predicha ni una probabilidad de inventario real. No se promete calibración. `prediction` conserva `model.predict()`, con umbral nominal 0.5: para estos HGB binarios, el empate exacto devuelve 0. Las métricas históricas P2 utilizan `>= 0.5`; esta diferencia en empates se documenta sin cambiar la API ni reescribir métricas anteriores.
+
+El esquema acepta enteros para hora (0-23), día (0-6, lunes=0) y mes (1-12), y un booleano JSON para `is_weekend`. Los once predictores restantes son números finitos representables como `float32`; solo los tres flujos netos pueden ser negativos. Todas las variables son obligatorias. Se rechazan `null`, campos extra, conversiones desde cadenas, booleanos en campos numéricos, NaN e Infinity con HTTP 422.
+
+Los modelos P2 registrados tienen firma tensorial `float32`, forma `[-1, 15]`. La API ordena con `PREDICTOR_COLUMNS`; no usa el orden de las claves JSON. Ambos modelos se cargan una vez durante el arranque. Si falla la carga, el servicio no inicia; si falta un modelo durante la operación, `/health` y `/predict` responden 503. Una salida inválida o un fallo de inferencia devuelve 500 sin detalles internos.
+
+Para comprobar un 422 desde PowerShell usando la misma entrada completa:
+
+```powershell
+$invalid = Get-Content docs/examples/p2-request.json -Raw | ConvertFrom-Json
+$invalid.hour_of_day = 24
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/predict -ContentType "application/json" -Body ($invalid | ConvertTo-Json)
+```
+
+El error HTTP 422 es el resultado esperado. En Swagger, ejecutar la entrada válida y luego cambiar `hour_of_day` a 24 permite ver ambos estados.
+
+### 14.5. Pruebas y evidencias
+
+```bash
+python -m pytest -q
+python -m pytest tests/api/test_main.py -q
+make lint
+python -m pip check
+```
+
+Sin Make, `python -m ruff format --check` y `python -m ruff check` son los dos chequeos de `make lint`. Para incluir explícitamente la nueva suite: `python -m ruff check tests/api --config 'include=["*.py"]'`.
+
+Las pruebas unitarias usan `TestClient`, fixtures y mocks del cargador, sin Registry real. Las dos integraciones externas se omiten por defecto. Con Registry activo, modelos exportados y contenedor funcionando, habilitarlas en PowerShell:
+
+```powershell
+$env:MIBICI_API_INTEGRATION = "1"
+$env:MIBICI_API_CONTAINER = "1"
+python -m pytest tests/api/test_main.py -q -k "real_registry_export or live_container"
+Remove-Item Env:MIBICI_API_INTEGRATION, Env:MIBICI_API_CONTAINER
+```
+
+En Bash:
+
+```bash
+MIBICI_API_INTEGRATION=1 MIBICI_API_CONTAINER=1 python -m pytest tests/api/test_main.py -q -k 'real_registry_export or live_container'
+```
+
+La prueba Registry compara alias, versión, run, firma, orden, umbral y probabilidades de los modelos cargados y exportados. La prueba HTTP verifica el contenedor en `MIBICI_API_URL` (por defecto `http://127.0.0.1:8000`). No se presentan mocks como prueba de extremo a extremo.
+
+Resultado global: **279 aprobadas y 2 integraciones omitidas**, más **2 integraciones reales aprobadas por separado**. Los detalles, advertencias, limitaciones y matriz de requisitos están en [docs/api_validation.md](docs/api_validation.md).
+
+Captura auténtica de Swagger ejecutando `POST /predict` contra el contenedor Docker, con HTTP 200 y ambos modelos. No es una respuesta simulada:
+
+![Predicción HTTP 200 de la API P2 ejecutada en Docker](docs/evidence/api-container-prediction.png)
+
+### 14.6. Problemas frecuentes
+
+| Problema | Acción |
+|---|---|
+| Registry inaccesible o alias ausente | Revisar `MLFLOW_TRACKING_URI`, servidor, nombre y alias; obtener acceso al Registry del equipo. No inventar versiones ni registrar otro modelo para ocultar el problema. |
+| Faltan `MLmodel` o `model.skops` | Repetir la exportación con artefactos accesibles y reconstruir. Los modelos no vienen del clon de Git. |
+| Docker no conecta con el motor | Iniciar Docker Desktop en modo Linux (`docker desktop start`, si está disponible) y verificar `docker info`. |
+| Podman en Windows no conecta | Verificar que la máquina de Podman esté iniciada con `podman machine list` y `podman machine start`. |
+| `make` no existe | Usar los comandos Python y Podman/Docker explícitos anteriores. |
+| Puerto o nombre ocupado | Detener solo el contenedor propio o usar otro nombre y `-p 127.0.0.1:8001:8000`; ajustar la URL y `MIBICI_API_URL`. |
+| Incompatibilidad de scikit-learn/skops | Usar las versiones fijadas para la imagen y revisar las registradas en `MLmodel`; no actualizar el modelo entrenado durante el despliegue. |
+| HTTP 422 | Revisar tipos JSON, campos obligatorios, valores finitos y rangos en `/docs`; no enviar IDs ni datos personales. |
+| Swagger sin interfaz | `/docs` utiliza recursos CDN; revisar acceso de red. `/openapi.json` y las consultas HTTP no necesitan esos recursos externos. |
+
+Este despliegue es una demostración local sin autenticación ni TLS. No exponerlo públicamente sin controles adicionales; no se afirma que sea un servicio de producción.
