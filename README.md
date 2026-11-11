@@ -758,3 +758,106 @@ Captura auténtica de Swagger ejecutando `POST /predict` contra el contenedor Do
 | Swagger sin interfaz | `/docs` utiliza recursos CDN; revisar acceso de red. `/openapi.json` y las consultas HTTP no necesitan esos recursos externos. |
 
 Este despliegue es una demostración local sin autenticación ni TLS. No exponerlo públicamente sin controles adicionales; no se afirma que sea un servicio de producción.
+
+## 15. Monitoreo de Data Drift y Data Quality
+
+Esta sección documenta la implementación del monitoreo de Data Drift y Data Quality mediante la biblioteca Evidently, con el objetivo de analizar posibles cambios en la distribución de los datos y revisar sus características de calidad.
+
+### 15.1. Objetivo
+
+Se implementaron dos reportes:
+
+- **Data Drift:** compara la distribución de las variables entre un conjunto de referencia y uno actual para identificar posibles cambios en los datos.
+- **Data Quality:** presenta un resumen estadístico de los datos actuales, incluyendo distribuciones, valores faltantes y características generales de las variables.
+
+### 15.2. Conjuntos de datos
+
+Para realizar el análisis se utiliza el siguiente dataset:
+
+`data/processed/station_hourly_2025_complete.parquet`
+
+Se estableció una división temporal de los datos:
+
+| Conjunto | Periodo | Registros |
+|---|---|---:|
+| Reference | Enero – agosto de 2025 | 2,137,920 |
+| Current | Septiembre – octubre de 2025 | 537,640 |
+
+El conjunto Reference representa el comportamiento histórico de los datos, mientras que Current permite evaluar posibles cambios durante los meses posteriores.
+
+Los registros correspondientes a noviembre y diciembre de 2025 se mantienen fuera del análisis, ya que forman parte del periodo de prueba reservado del proyecto.
+
+### 15.3. Preparación de variables
+
+Antes de generar los reportes se realizan las siguientes transformaciones:
+
+- `station_id` se convierte a tipo texto para tratarla como variable categórica.
+- Se crea `hour_of_day` a partir de `hour`, para representar la hora del día en valores de 0 a 23.
+- Se conserva `is_observed_hour`, incluyendo los registros con valor `False`.
+
+### 15.4. Requisitos
+
+La ejecución requiere el dataset procesado y las dependencias correspondientes. Entre ellas se encuentra:
+
+- `pandas`
+- `pyarrow`
+- `evidently==0.7.23`
+
+Se debe contar con el entorno virtual del proyecto activado antes de ejecutar el script.
+
+### 15.5. Ejecución
+
+Desde la raíz del repositorio, ejecutar:
+
+```powershell
+python -m mibici.monitoring.drift_report
+```
+
+El script realiza automáticamente las siguientes operaciones:
+
+1. Carga el dataset procesado.
+2. Prepara las variables utilizadas en el análisis.
+3. Separa los conjuntos Reference y Current.
+4. Genera el reporte de Data Drift.
+5. Genera el reporte de Data Quality.
+6. Guarda ambos reportes en formato HTML.
+
+### 15.6. Reportes generados
+
+Los reportes se almacenan en el directorio:
+
+`reports/evidently/`
+
+| Reporte | Archivo generado |
+|---|---|
+| Data Drift | `data_drift_report_v2.html` |
+| Data Quality | `data_quality_report.html` |
+
+Ambos archivos pueden abrirse directamente en un navegador web para consultar sus métricas, estadísticas y visualizaciones.
+
+### 15.7. Resultados del análisis
+
+**Data Drift**
+
+La comparación entre los conjuntos Reference y Current analizó siete variables:
+
+- `station_id`
+- `hour_of_day`
+- `departures`
+- `arrivals`
+- `net_flow`
+- `total_activity`
+- `is_observed_hour`
+
+El reporte no detectó Data Drift en ninguna de las siete variables analizadas.
+
+**Data Quality**
+
+El reporte de calidad presentó un resumen de los 537,640 registros del conjunto Current. Entre los resultados obtenidos se identificaron:
+
+- 0 valores faltantes.
+- 0 columnas vacías.
+- 0 columnas constantes.
+- 0 columnas duplicadas.
+
+Los resultados permiten describir las características del conjunto analizado y complementar la evaluación del comportamiento de los datos.
