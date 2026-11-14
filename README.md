@@ -81,6 +81,7 @@ TC5061-Proyecto-Equipo28/
 │   ├── validation.py     # Integridad y drift de P1/P2 con Deepchecks
 │   ├── workflow.py       # Encadena los entry points bajo un run padre
 │   ├── api/              # Servicio REST P2 y exportación de modelos
+│   ├── monitoring/       # Reportes de drift y calidad de datos con Evidently
 │   └── modeling/         # Modelos P1 y P2, runs de MLflow, búsqueda y Model Registry
 ├── models/               # Modelos generados localmente
 ├── notebooks/            # Exploración de datos
@@ -412,6 +413,8 @@ tests/
 ├── test_features.py      # mibici/features.py
 ├── test_tracking.py      # mibici/tracking.py
 ├── test_validation.py    # mibici/validation.py
+├── monitoring/
+│   └── test_drift_report.py  # mibici/monitoring/drift_report.py
 └── modeling/
     ├── test_evaluate.py      # mibici/modeling/evaluate.py
     ├── test_mlflow_runs.py   # mibici/modeling/mlflow_runs.py
@@ -761,103 +764,45 @@ Este despliegue es una demostración local sin autenticación ni TLS. No exponer
 
 ## 15. Monitoreo de Data Drift y Data Quality
 
-Esta sección documenta la implementación del monitoreo de Data Drift y Data Quality mediante la biblioteca Evidently, con el objetivo de analizar posibles cambios en la distribución de los datos y revisar sus características de calidad.
+El módulo `mibici/monitoring/drift_report.py` usa Evidently 0.7.23 para comparar los datos con los que se entrenó el modelo P2 contra un periodo posterior que representa producción. La interpretación completa de los resultados está en [docs/drift_interpretation.md](docs/drift_interpretation.md).
 
-### 15.1. Objetivo
+### 15.1. Conjuntos de datos
 
-Se implementaron dos reportes:
+| Conjunto | Periodo | Filas | Origen |
+|---|---|---:|---|
+| Reference | Enero-agosto de 2025 | 2,137,182 | Partición train de `data/processed/p2_targets_2025_train_validation.parquet`, con la que se entrenó el champion de P2 |
+| Current | Noviembre-diciembre de 2025 | 536,245 | `build_p2_test_dataset()` sobre `station_hourly_2025_complete.parquet`, con etiquetas calculadas con los umbrales de presión de train |
 
-- **Data Drift:** compara la distribución de las variables entre un conjunto de referencia y uno actual para identificar posibles cambios en los datos.
-- **Data Quality:** presenta un resumen estadístico de los datos actuales, incluyendo distribuciones, valores faltantes y características generales de las variables.
+Septiembre-octubre no se usa como current porque es la partición validation con la que se eligió el champion. Noviembre-diciembre es el primer periodo que el modelo no vio en entrenamiento ni en selección.
 
-### 15.2. Conjuntos de datos
+Se comparan las 17 columnas que importan al modelo: sus 15 variables de entrada (`PREDICTOR_COLUMNS`: calendario, rezagos y medias móviles) y las etiquetas `target_bike_pressure` y `target_dock_pressure`. Las variables de calendario y las etiquetas se tratan como categóricas; los rezagos y las medias móviles, como numéricas. Evidently elige la prueba de cada variable (Wasserstein o Jensen-Shannon, umbral 0.1), salvo en las etiquetas, que usan la prueba Z de proporciones (p < 0.05) porque Jensen-Shannon casi no reacciona a cambios de prevalencia en clases tan desbalanceadas.
 
-Para realizar el análisis se utiliza el siguiente dataset:
+### 15.2. Ejecución
 
-`data/processed/station_hourly_2025_complete.parquet`
+Requiere los Parquets de `ingest` y `p2_targets` y el catálogo de `p2_catalog` (sección 7.4). Evidently ya está en `requirements.txt`. Desde la raíz del repositorio:
 
-Se estableció una división temporal de los datos:
-
-| Conjunto | Periodo | Registros |
-|---|---|---:|
-| Reference | Enero – agosto de 2025 | 2,137,920 |
-| Current | Septiembre – octubre de 2025 | 537,640 |
-
-El conjunto Reference representa el comportamiento histórico de los datos, mientras que Current permite evaluar posibles cambios durante los meses posteriores.
-
-Los registros correspondientes a noviembre y diciembre de 2025 se mantienen fuera del análisis, ya que forman parte del periodo de prueba reservado del proyecto.
-
-### 15.3. Preparación de variables
-
-Antes de generar los reportes se realizan las siguientes transformaciones:
-
-- `station_id` se convierte a tipo texto para tratarla como variable categórica.
-- Se crea `hour_of_day` a partir de `hour`, para representar la hora del día en valores de 0 a 23.
-- Se conserva `is_observed_hour`, incluyendo los registros con valor `False`.
-
-### 15.4. Requisitos
-
-La ejecución requiere el dataset procesado y las dependencias correspondientes. Entre ellas se encuentra:
-
-- `pandas`
-- `pyarrow`
-- `evidently==0.7.23`
-
-Se debe contar con el entorno virtual del proyecto activado antes de ejecutar el script.
-
-### 15.5. Ejecución
-
-Desde la raíz del repositorio, ejecutar:
-
-```powershell
+```bash
 python -m mibici.monitoring.drift_report
 ```
 
-El script realiza automáticamente las siguientes operaciones:
+Tarda alrededor de un minuto y escribe en `reports/evidently/`:
 
-1. Carga el dataset procesado.
-2. Prepara las variables utilizadas en el análisis.
-3. Separa los conjuntos Reference y Current.
-4. Genera el reporte de Data Drift.
-5. Genera el reporte de Data Quality.
-6. Guarda ambos reportes en formato HTML.
-
-### 15.6. Reportes generados
-
-Los reportes se almacenan en el directorio:
-
-`reports/evidently/`
-
-| Reporte | Archivo generado |
+| Archivo | Contenido |
 |---|---|
-| Data Drift | `data_drift_report_v2.html` |
-| Data Quality | `data_quality_report.html` |
+| `data_drift_report.html` | Drift por variable: distribución reference contra current, prueba estadística y puntaje |
+| `data_quality_report.html` | Resumen de calidad de ambos periodos: faltantes, columnas constantes o duplicadas y distribución de cada variable |
+| `drift_summary.json` | Periodos, filas, umbrales de presión, prevalencia de las etiquetas y resultado de drift por variable |
 
-Ambos archivos pueden abrirse directamente en un navegador web para consultar sus métricas, estadísticas y visualizaciones.
+Los HTML se abren directamente en el navegador. Las pruebas del módulo están en `tests/monitoring/test_drift_report.py`.
 
-### 15.7. Resultados del análisis
+### 15.3. Resultados
 
-**Data Drift**
+![Resumen de Data Drift de Evidently: 3 de 17 variables con drift](docs/evidence/evidently-data-drift.png)
 
-La comparación entre los conjuntos Reference y Current analizó siete variables:
+- **Drift significativo en 3 de 17 variables.** El encabezado "Dataset Drift is NOT detected" solo indica que no se alcanza el criterio global por defecto de Evidently (50 % de las variables).
+- **`month`** (Jensen-Shannon 0.83): train contiene los meses 1-8 y current los meses 11-12, valores que el modelo nunca vio.
+- Los rezagos y las medias móviles, la señal principal del modelo, no superan el umbral (Wasserstein ≤ 0.06).
+- **Las dos etiquetas** (prueba Z, p < 0.001): la prevalencia de presión de bicicletas baja de 4.34 % a 3.09 % (−29 %) y la de anclajes de 4.10 % a 3.43 % (−16 %). Explica la caída de precision y AP observada en [reports/test_evaluation.md](reports/test_evaluation.md).
+- Calidad: sin columnas vacías, constantes ni duplicadas; los únicos faltantes son las primeras horas sin historia de los rezagos.
 
-- `station_id`
-- `hour_of_day`
-- `departures`
-- `arrivals`
-- `net_flow`
-- `total_activity`
-- `is_observed_hour`
-
-El reporte no detectó Data Drift en ninguna de las siete variables analizadas.
-
-**Data Quality**
-
-El reporte de calidad presentó un resumen de los 537,640 registros del conjunto Current. Entre los resultados obtenidos se identificaron:
-
-- 0 valores faltantes.
-- 0 columnas vacías.
-- 0 columnas constantes.
-- 0 columnas duplicadas.
-
-Los resultados permiten describir las características del conjunto analizado y complementar la evaluación del comportamiento de los datos.
+La conclusión y las recomendaciones (reentrenar incluyendo meses recientes y revisar el umbral de decisión) están en [docs/drift_interpretation.md](docs/drift_interpretation.md).
