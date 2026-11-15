@@ -1,0 +1,150 @@
+{
+  "model": "P2 (mibici-p2-bike-pressure / mibici-p2-dock-pressure)",
+  "reference": {
+    "period": "2025-01-01/2025-08-31",
+    "partition": "train",
+    "rows": 2137182
+  },
+  "current": {
+    "period": "2025-11-01/2025-12-31",
+    "partition": "test",
+    "rows": 536245
+  },
+  "pressure_thresholds_train_only": {
+    "bike_pressure_ratio": 0.3684210526315789,
+    "dock_pressure_ratio": 0.3684210526315789
+  },
+  "drifted_columns": 3,
+  "monitored_columns": 17,
+  "prevalence": {
+    "target_bike_pressure": {
+      "reference": 0.04338282841611056,
+      "current": 0.030881406819644006
+    },
+    "target_dock_pressure": {
+      "reference": 0.0409894898983802,
+      "current": 0.034256729666477075
+    }
+  },
+  "columns": [
+    {
+      "column": "hour_of_day",
+      "method": "Jensen-Shannon distance",
+      "threshold": 0.1,
+      "score": 0.0018850426599526407,
+      "drift_detected": false
+    },
+    {
+      "column": "day_of_week",
+      "method": "Jensen-Shannon distance",
+      "threshold": 0.1,
+      "score": 0.020745118717038484,
+      "drift_detected": false
+    },
+    {
+      "column": "month",
+      "method": "Jensen-Shannon distance",
+      "threshold": 0.1,
+      "score": 0.8325546111576977,
+      "drift_detected": true
+    },
+    {
+      "column": "is_weekend",
+      "method": "Jensen-Shannon distance",
+      "threshold": 0.1,
+      "score": 0.0060629395550265315,
+      "drift_detected": false
+    },
+    {
+      "column": "departures_lag_1h",
+      "method": "Wasserstein distance (normed)",
+      "threshold": 0.1,
+      "score": 0.033311780646865116,
+      "drift_detected": false
+    },
+    {
+      "column": "departures_lag_24h",
+      "method": "Wasserstein distance (normed)",
+      "threshold": 0.1,
+      "score": 0.029526742155684762,
+      "drift_detected": false
+    },
+    {
+      "column": "departures_lag_168h",
+      "method": "Wasserstein distance (normed)",
+      "threshold": 0.1,
+      "score": 0.006177572688726514,
+      "drift_detected": false
+    },
+    {
+      "column": "arrivals_lag_1h",
+      "method": "Wasserstein distance (normed)",
+      "threshold": 0.1,
+      "score": 0.029952979790040198,
+      "drift_detected": false
+    },
+    {
+      "column": "arrivals_lag_24h",
+      "method": "Wasserstein distance (normed)",
+      "threshold": 0.1,
+      "score": 0.0264158480696278,
+      "drift_detected": false
+    },
+    {
+      "column": "arrivals_lag_168h",
+      "method": "Wasserstein distance (normed)",
+      "threshold": 0.1,
+      "score": 0.0039476987170412965,
+      "drift_detected": false
+    },
+    {
+      "column": "net_flow_lag_1h",
+      "method": "Wasserstein distance (normed)",
+      "threshold": 0.1,
+      "score": 0.043011505469109965,
+      "drift_detected": false
+    },
+    {
+      "column": "net_flow_lag_24h",
+      "method": "Wasserstein distance (normed)",
+      "threshold": 0.1,
+      "score": 0.040863290165755524,
+      "drift_detected": false
+    },
+    {
+      "column": "net_flow_lag_168h",
+      "method": "Wasserstein distance (normed)",
+      "threshold": 0.1,
+      "score": 0.023511358710237056,
+      "drift_detected": false
+    },
+    {
+      "column": "departures_rolling_mean_24h",
+      "method": "Wasserstein distance (normed)",
+      "threshold": 0.1,
+      "score": 0.05984740084447282,
+      "drift_detected": false
+    },
+    {
+      "column": "departures_rolling_mean_168h",
+      "method": "Wasserstein distance (normed)",
+      "threshold": 0.1,
+      "score": 0.05121067227786189,
+      "drift_detected": false
+    },
+    {
+      "column": "target_bike_pressure",
+      "method": "Z-test p_value",
+      "threshold": 0.05,
+      "score": 0.0,
+      "drift_detected": true
+    },
+    {
+      "column": "target_dock_pressure",
+      "method": "Z-test p_value",
+      "threshold": 0.05,
+      "score": 0.0,
+      "drift_detected": true
+    }
+  ]
+}

@@ -138,3 +138,36 @@ def make_labeled_data(include_test: bool = True) -> pd.DataFrame:
         )
         records.append(test_row)
     return pd.DataFrame(records)
+
+
+def make_hourly_for_reproduction() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Crear movimientos con presiones positivas en train y validation."""
+    hours = pd.date_range("2025-08-25", periods=240, freq="h")
+    rows = []
+    for station_id, offset in ((1, 0), (2, 2)):
+        for index, hour in enumerate(hours):
+            phase = (index + offset) % 4
+            departures = 2 if phase in (0, 1) else 0
+            arrivals = 2 if phase in (2, 3) else 0
+            rows.append(
+                {
+                    "station_id": station_id,
+                    "hour": hour,
+                    "departures": departures,
+                    "arrivals": arrivals,
+                    "net_flow": arrivals - departures,
+                    "total_activity": arrivals + departures,
+                    "is_observed_hour": True,
+                }
+            )
+    hourly = pd.DataFrame(rows)
+    catalog = pd.DataFrame(
+        {
+            "id": [1, 2],
+            "name": ["One", "Two"],
+            "latitude": [20.0, 20.1],
+            "longitude": [-103.0, -103.1],
+            "dpcapacity": [10, 20],
+        }
+    )
+    return hourly, catalog
