@@ -1,19 +1,22 @@
 """Pruebas sintéticas de los reportes de drift y calidad con Evidently."""
 
+import hashlib
 import json
 
 import pytest
 
-from mibici.modeling.p2_targets import TARGET_BIKE_COLUMN
+from mibici.modeling.p2_catalog import CATALOG_FILENAME, PROVENANCE_FILENAME
+from mibici.modeling.p2_targets import TARGET_BIKE_COLUMN, build_p2_targets
 from mibici.monitoring.drift_report import (
     CATEGORICAL_COLUMNS,
     MONITORED_COLUMNS,
     NUMERICAL_COLUMNS,
-    drift_detected,
     generate_reports,
     load_reference,
+    summarize_drift,
+    train_thresholds,
 )
-from tests.factories import make_labeled_data
+from tests.factories import make_hourly_for_reproduction, make_labeled_data
 
 
 def test_monitored_columns_are_model_inputs_plus_targets():
@@ -35,21 +38,33 @@ def test_load_reference_keeps_only_train_partition(tmp_path):
     assert set(reference["month"]) == {8}
 
 
-@pytest.mark.parametrize(
-    ("method", "score", "expected"),
-    [
-        ("Jensen-Shannon distance", 0.83, True),
-        ("Wasserstein distance (normed)", 0.03, False),
-        ("K-S p_value", 0.01, True),
-        ("chi-square p_value", 0.40, False),
-        # Con per_column_method Evidently guarda el id corto de la prueba.
-        ("z", 1e-9, True),
-        ("z", 0.40, False),
-    ],
-)
-def test_drift_detected_respects_direction_of_each_method(method, score, expected):
-    threshold = 0.05 if "p_value" in method or method == "z" else 0.1
-    assert drift_detected(method, score, threshold) is expected
+def _value_drift(metric_id, column, method, score, status):
+    metric = {
+        "id": metric_id,
+        "config": {
+            "type": "evidently:metric_v2:ValueDrift",
+            "column": column,
+            "method": method,
+            "threshold": 0.05,
+        },
+        "value": score,
+    }
+    test = {"id": "drift", "metric_config": {"metric_id": metric_id}, "status": status}
+    return metric, test
+
+
+def test_summarize_drift_uses_evidently_decision_not_score_direction():
+    # Fisher es una prueba de p-value cuyo nombre no contiene "p_value": la decisión
+    # debe venir del estado de la prueba de Evidently, no inferirse del puntaje.
+    fisher, fisher_test = _value_drift("m1", TARGET_BIKE_COLUMN, "fisher_exact", 1e-9, "FAIL")
+    z_test, z_status = _value_drift("m2", "target_dock_pressure", "z", 0.9, "SUCCESS")
+    snapshot = {"metrics": [z_test, fisher], "tests": [fisher_test, z_status]}
+
+    rows = {row["column"]: row for row in summarize_drift(snapshot)}
+
+    assert rows[TARGET_BIKE_COLUMN]["drift_detected"] is True
+    assert rows["target_dock_pressure"]["drift_detected"] is False
+    assert rows["target_dock_pressure"]["method"] == "Z-test p_value"
 
 
 def test_generate_reports_writes_html_and_per_column_summary(tmp_path):
@@ -73,3 +88,37 @@ def test_generate_reports_writes_html_and_per_column_summary(tmp_path):
     assert summary["prevalence"][TARGET_BIKE_COLUMN]["reference"] == pytest.approx(
         reference[TARGET_BIKE_COLUMN].mean()
     )
+
+
+def _write_label_artifacts(tmp_path, alter_label=False):
+    hourly, catalog = make_hourly_for_reproduction()
+    hourly_path = tmp_path / "hourly.parquet"
+    catalog_path = tmp_path / CATALOG_FILENAME
+    label_path = tmp_path / "labels.parquet"
+    hourly.to_parquet(hourly_path, index=False)
+    catalog.to_csv(catalog_path, index=False)
+    digest = hashlib.sha256(catalog_path.read_bytes()).hexdigest()
+    catalog_path.with_name(PROVENANCE_FILENAME).write_text(
+        json.dumps({"catalog_version": "2026-09", "sha256": digest}), encoding="utf-8"
+    )
+    result = build_p2_targets(hourly, catalog)
+    labels = result.data.copy()
+    if alter_label:
+        labels.loc[0, TARGET_BIKE_COLUMN] = 1 - labels.loc[0, TARGET_BIKE_COLUMN]
+    labels.to_parquet(label_path, index=False)
+    return result.thresholds, (label_path, hourly_path, catalog_path)
+
+
+def test_train_thresholds_match_the_ones_behind_reference_labels(tmp_path):
+    expected, paths = _write_label_artifacts(tmp_path)
+
+    assert train_thresholds(*paths) == expected
+
+
+def test_train_thresholds_reject_labels_from_a_different_build(tmp_path):
+    # Si reference y el Parquet horario no vienen de la misma construcción, las etiquetas
+    # de current usarían otros umbrales y el drift de las etiquetas sería artificial.
+    _, paths = _write_label_artifacts(tmp_path, alter_label=True)
+
+    with pytest.raises(ValueError, match="no se reproducen exactamente"):
+        train_thresholds(*paths)

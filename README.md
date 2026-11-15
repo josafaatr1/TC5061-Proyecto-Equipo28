@@ -779,7 +779,7 @@ Se comparan las 17 columnas que importan al modelo: sus 15 variables de entrada 
 
 ### 15.2. Ejecución
 
-Requiere los Parquets de `ingest` y `p2_targets` y el catálogo de `p2_catalog` (sección 7.4). Evidently ya está en `requirements.txt`. Desde la raíz del repositorio:
+Requiere los Parquets de `ingest` y `p2_targets` y el catálogo de `p2_catalog` (sección 7.4). Antes de generar los reportes se verifica que las etiquetas de reference se reproduzcan exactamente con esos archivos (`verify_label_reproducibility`), para que ambos periodos usen los mismos umbrales de presión; si no coinciden, el comando falla. Evidently ya está en `requirements.txt`. Desde la raíz del repositorio:
 
 ```bash
 python -m mibici.monitoring.drift_report
@@ -789,9 +789,9 @@ Tarda alrededor de un minuto y escribe en `reports/evidently/`:
 
 | Archivo | Contenido |
 |---|---|
-| `data_drift_report.html` | Drift por variable: distribución reference contra current, prueba estadística y puntaje |
+| `data_drift_report.html` | Drift por variable: distribución reference contra current, prueba estadística y puntaje; la pestaña *Tests* muestra la decisión de drift de cada variable |
 | `data_quality_report.html` | Resumen de calidad de ambos periodos: faltantes, columnas constantes o duplicadas y distribución de cada variable |
-| `drift_summary.json` | Periodos, filas, umbrales de presión, prevalencia de las etiquetas y resultado de drift por variable |
+| `drift_summary.json` | Periodos, filas, umbrales de presión, prevalencia de las etiquetas y resultado de drift por variable (la misma decisión que muestra el HTML) |
 
 Los HTML se abren directamente en el navegador. Las pruebas del módulo están en `tests/monitoring/test_drift_report.py`.
 

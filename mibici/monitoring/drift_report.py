@@ -31,11 +31,8 @@ from mibici.modeling.p2_catalog import load_catalog
 from mibici.modeling.p2_targets import (
     TARGET_BIKE_COLUMN,
     TARGET_DOCK_COLUMN,
-    VALIDATION_END,
     PressureThresholds,
     build_p2_test_dataset,
-    calculate_pressure_windows,
-    fit_pressure_thresholds,
 )
 from mibici.modeling.p2_train import (
     CALENDAR_FEATURES,
@@ -43,6 +40,7 @@ from mibici.modeling.p2_train import (
     HOURLY_DATA_PATH,
     LABEL_DATA_PATH,
     PREDICTOR_COLUMNS,
+    verify_label_reproducibility,
 )
 
 app = typer.Typer()
@@ -74,23 +72,32 @@ def load_reference(label_path: Path = LABEL_DATA_PATH) -> pd.DataFrame:
     )
 
 
-def fit_train_thresholds(hourly: pd.DataFrame, catalog: pd.DataFrame) -> PressureThresholds:
-    """Recalcular los umbrales de presión solo con ventanas train, como en ``p2_targets``."""
-    calculation = calculate_pressure_windows(hourly.loc[hourly["hour"] < VALIDATION_END], catalog)
-    train_windows = calculation.windows.loc[calculation.windows["partition"].eq("train")]
-    return fit_pressure_thresholds(train_windows)
+def train_thresholds(
+    label_path: Path = LABEL_DATA_PATH,
+    hourly_path: Path = HOURLY_DATA_PATH,
+    catalog_path: Path = CATALOG_PATH,
+) -> PressureThresholds:
+    """Umbrales de presión de train, verificados contra las etiquetas de reference.
+
+    ``verify_label_reproducibility`` recrea las etiquetas de enero-octubre desde el
+    Parquet horario y el catálogo, y falla si no coinciden exactamente con
+    ``label_path``. Así reference y current quedan etiquetados con los mismos umbrales
+    y un drift en las etiquetas no puede venir de artefactos de construcciones distintas.
+    """
+    provenance = verify_label_reproducibility(label_path, hourly_path, catalog_path)
+    return PressureThresholds(**provenance["label_pressure_thresholds_train_only"])
 
 
 def load_current(
+    thresholds: PressureThresholds,
     hourly_path: Path = HOURLY_DATA_PATH,
     catalog_path: Path = CATALOG_PATH,
-) -> tuple[pd.DataFrame, PressureThresholds]:
+) -> pd.DataFrame:
     """Predictores y etiquetas de noviembre-diciembre con umbrales congelados de train."""
     hourly = pd.read_parquet(hourly_path, columns=list(REQUIRED_COLUMNS))
     catalog = load_catalog(catalog_path, strict=False)
-    thresholds = fit_train_thresholds(hourly, catalog)
     current = build_p2_test_dataset(hourly, catalog, thresholds)
-    return current.loc[:, list(MONITORED_COLUMNS)], thresholds
+    return current.loc[:, list(MONITORED_COLUMNS)]
 
 
 def _as_dataset(frame: pd.DataFrame) -> Dataset:
@@ -112,15 +119,18 @@ def method_display_name(method: str) -> str:
     return names.get(method, method)
 
 
-def drift_detected(method: str, score: float, threshold: float) -> bool:
-    """Las pruebas de p-value detectan drift por debajo del umbral; las distancias, por encima."""
-    if "p_value" in method_display_name(method):
-        return score < threshold
-    return score >= threshold
-
-
 def summarize_drift(snapshot_dict: dict[str, Any]) -> list[dict[str, Any]]:
-    """Resultado por variable de los ``ValueDrift`` de un reporte de Evidently."""
+    """Resultado por variable de los ``ValueDrift`` de un reporte de Evidently.
+
+    La decisión de drift se toma de la prueba que Evidently asocia a cada ``ValueDrift``
+    (``FAIL`` = drift), no se recalcula desde el puntaje: así el resumen coincide con el
+    HTML sin importar si la prueba usa p-value o distancia.
+    """
+    drift_status = {
+        test["metric_config"]["metric_id"]: test["status"]
+        for test in snapshot_dict["tests"]
+        if test["id"] == "drift"
+    }
     rows = []
     for metric in snapshot_dict["metrics"]:
         config = metric["config"]
@@ -133,7 +143,7 @@ def summarize_drift(snapshot_dict: dict[str, Any]) -> list[dict[str, Any]]:
                 "method": method_display_name(config["method"]),
                 "threshold": config["threshold"],
                 "score": score,
-                "drift_detected": drift_detected(config["method"], score, config["threshold"]),
+                "drift_detected": drift_status[metric["id"]] == "FAIL",
             }
         )
     return sorted(rows, key=lambda row: MONITORED_COLUMNS.index(row["column"]))
@@ -150,7 +160,8 @@ def generate_reports(
     reference_data, current_data = _as_dataset(reference), _as_dataset(current)
 
     drift = Report(
-        [DataDriftPreset(columns=list(MONITORED_COLUMNS), per_column_method=PER_COLUMN_METHOD)]
+        [DataDriftPreset(columns=list(MONITORED_COLUMNS), per_column_method=PER_COLUMN_METHOD)],
+        include_tests=True,
     ).run(current_data=current_data, reference_data=reference_data)
     drift.save_html(str(output_dir / "data_drift_report.html"))
 
@@ -191,7 +202,8 @@ def main(
 ) -> None:
     """Generar los reportes de Data Drift y Data Quality de P2."""
     reference = load_reference(label_path)
-    current, thresholds = load_current(hourly_path, catalog_path)
+    thresholds = train_thresholds(label_path, hourly_path, catalog_path)
+    current = load_current(thresholds, hourly_path, catalog_path)
     logger.info(f"Reference {REFERENCE_PERIOD}: {len(reference):,} filas")
     logger.info(f"Current {CURRENT_PERIOD}: {len(current):,} filas")
 
