@@ -117,6 +117,122 @@ Ordenado por Average Precision (AP). Umbral de decisión 0.5, fijo y declarado a
 
 El prefijo de los runs de la búsqueda de P2 es `P2-bike-pressure-` o `P2-dock-pressure-`.
 
+### 4.4. Ampliación experimental P2 — Catálogo 2026-10 y selección de champions
+
+Esta ampliación documenta una ejecución posterior de los experimentos de clasificación P2 utilizando el catálogo oficial de estaciones `nomenclatura_2026_10.csv`. Los resultados corresponden exclusivamente a **validation (septiembre–octubre de 2025)** y fueron obtenidos de los runs registrados en MLflow.
+
+Las secciones 4.2 y 4.3 conservan los resultados de la ejecución anterior como referencia histórica.
+
+#### 4.4.1. Datos, procedencia y cobertura
+
+El catálogo contiene **470 estaciones**. La auditoría identificó correspondencia para **369 de las 370 estaciones** presentes en los registros de 2025, con una cobertura del **99.8603 % de las observaciones estación-hora** (2,671,821 de 2,675,560). La estación 240 no tuvo correspondencia.
+
+La ejecución utilizó:
+
+| Partición | Observaciones | Periodo |
+|---|---:|---|
+| Entrenamiento | 2,133,445 | Enero–agosto de 2025 |
+| Validación | 536,904 | Septiembre–octubre de 2025 |
+| Test | Excluido | Noviembre–diciembre de 2025 |
+
+Los umbrales de presión se calcularon exclusivamente con los datos de entrenamiento, evitando utilizar la partición de validación para definir las etiquetas.
+
+**Limitación temporal:** las capacidades del catálogo de octubre de 2026 no están verificadas históricamente para 2025. Las etiquetas representan indicadores *proxy* derivados de flujos de viajes y capacidades disponibles, no mediciones reales de inventario de bicicletas o anclajes.
+
+#### 4.4.2. Comparación de modelos
+
+El criterio de selección fue maximizar `val_average_precision` (AP) de forma independiente para cada objetivo. Las métricas de Precision y Recall corresponden al umbral de clasificación de 0.5.
+
+| Objetivo | Modelo | Learning rate | Max leaf nodes | AP | Precision | Recall |
+|---|---|---:|---:|---:|---:|---:|
+| Bicicletas | Dummy prior | — | — | 0.040870 | 0.000000 | 0.000000 |
+| Bicicletas | HGB inicial | 0.10 | 31 | 0.318516 | 0.142329 | 0.855991 |
+| Bicicletas | **HGB champion** | **0.20** | **95** | **0.326717** | **0.150263** | **0.834617** |
+| Anclajes | Dummy prior | — | — | 0.042531 | 0.000000 | 0.000000 |
+| Anclajes | HGB inicial | 0.10 | 31 | 0.380710 | 0.149389 | 0.861178 |
+| Anclajes | **HGB champion** | **0.15** | **127** | **0.390036** | **0.157621** | **0.842479** |
+
+HGB corresponde a `HistGradientBoostingClassifier`.
+
+Frente a la configuración inicial, el champion de bicicletas incrementó AP aproximadamente **2.57 %**, mientras que el de anclajes obtuvo una mejora aproximada de **2.45 %**.
+
+#### 4.4.3. Resultados de la búsqueda de hiperparámetros
+
+La siguiente tabla resume los candidatos con mayor AP de la ejecución actual.
+
+**Presión de bicicletas**
+
+| Learning rate | Max leaf nodes | AP | Precision | Recall |
+|---:|---:|---:|---:|---:|
+| **0.20** | **95** | **0.326717** | **0.150263** | **0.834617** |
+| 0.15 | 95 | 0.325712 | 0.147945 | 0.842866 |
+| 0.15 | 63 | 0.325662 | 0.146490 | 0.848152 |
+| 0.15 | 127 | 0.325597 | 0.149981 | 0.836531 |
+| 0.20 | 127 | 0.324806 | 0.151720 | 0.827325 |
+
+**Presión de anclajes**
+
+| Learning rate | Max leaf nodes | AP | Precision | Recall |
+|---:|---:|---:|---:|---:|
+| **0.15** | **127** | **0.390036** | **0.157621** | **0.842479** |
+| 0.20 | 95 | 0.388379 | 0.156441 | 0.844624 |
+| 0.15 | 63 | 0.387802 | 0.153303 | 0.851544 |
+| 0.15 | 95 | 0.387687 | 0.155168 | 0.847646 |
+| 0.20 | 63 | 0.386914 | 0.154779 | 0.848522 |
+
+La búsqueda incluyó configuraciones con `learning_rate=0.30`, pero ninguna superó a los modelos seleccionados. Los runs repetidos que aparecen en el historial de MLflow no se contabilizan como configuraciones distintas.
+
+#### 4.4.4. Selección y análisis
+
+**Presión de bicicletas.** La configuración `learning_rate=0.20` y `max_leaf_nodes=95` obtuvo el mayor AP de validación (0.326717), con Precision de 0.150263 y Recall de 0.834617.
+
+**Presión de anclajes.** La configuración `learning_rate=0.15` y `max_leaf_nodes=127` obtuvo el mayor AP de validación (0.390036), con Precision de 0.157621 y Recall de 0.842479.
+
+En ambos objetivos, los modelos seleccionados mejoraron Precision respecto a la configuración inicial, pero presentaron menor Recall. Esto refleja un compromiso entre ambas métricas que debe considerarse antes de utilizar las predicciones para generar alertas operativas.
+
+La selección priorizó Average Precision, una métrica que evalúa el comportamiento del clasificador a través de distintos umbrales de decisión.
+
+Los resultados no permiten afirmar que se haya encontrado un óptimo global ni que las diferencias observadas sean estadísticamente significativas, ya que no se estimaron intervalos de confianza.
+
+#### 4.4.5. Registro y trazabilidad en MLflow
+
+Los modelos seleccionados se registraron en el Model Registry local con el alias `champion`:
+
+| Modelo registrado | Versión local | Run de origen | Métrica de selección |
+|---|---|---|---|
+| `mibici-p2-bike-pressure` | 1 | `49edaa34bc3d4d1a8d242eade7172314` | `val_average_precision = 0.326717` |
+| `mibici-p2-dock-pressure` | 1 | `2247e05202b54e2aa85af658e7af9e3e` | `val_average_precision = 0.390036` |
+
+Ambas versiones se verificaron con estado `READY` y alias `champion`.
+
+Los registros contienen información de procedencia, métricas de selección, versión de datos y referencias a los runs de entrenamiento.
+
+Los identificadores y números de versión corresponden al **servidor local de MLflow** utilizado durante esta ejecución. Los artefactos entrenados y la base de datos del Model Registry no se publican automáticamente mediante Git ni mediante el Pull Request.
+
+El módulo `mibici.modeling.registry` permite registrar exclusivamente los modelos P2 mediante:
+
+```bash
+python -m mibici.modeling.registry p2
+```
+
+#### 4.4.6. Validación técnica
+
+La suite completa de pruebas automatizadas finalizó con **285 pruebas aprobadas y 2 omitidas**.
+
+Después del ajuste final del comando de registro P2, las cuatro pruebas específicas del Model Registry finalizaron correctamente.
+
+| Verificación | Resultado |
+|---|---|
+| `pytest -q` | 285 passed, 2 skipped |
+| `pytest -q tests/modeling/test_registry.py` | 4 passed |
+| `ruff check .` | Sin errores |
+| `ruff format --check .` | 22 archivos con formato correcto |
+| `git diff --check` | Sin errores |
+
+Estas verificaciones respaldan la implementación y su integración con el repositorio. No sustituyen una evaluación independiente de generalización en test.
+
+---
+
 ## 5. Resultados de validation y test de los modelos seleccionados
 
 | Problema | Modelo | Métricas en validation | Test (nov.–dic. 2025) |

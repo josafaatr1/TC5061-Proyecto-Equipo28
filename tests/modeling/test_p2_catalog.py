@@ -110,7 +110,7 @@ def test_download_catalog_saves_csv_hash_and_provenance(tmp_path, monkeypatch):
     assert catalog_path.read_bytes() == content
     assert digest == hashlib.sha256(content).hexdigest()
     assert provenance["sha256"] == digest
-    assert provenance["catalog_version"] == "2026-09"
+    assert provenance["catalog_version"] == "2026-10"
     assert provenance["source_url"] == p2_catalog.OFFICIAL_CATALOG_URL
     get.assert_called_once_with(
         p2_catalog.OFFICIAL_CATALOG_URL,

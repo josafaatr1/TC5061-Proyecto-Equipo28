@@ -16,6 +16,7 @@ lee registros desde noviembre de 2025 (test reservado).
 from dataclasses import dataclass
 import hashlib
 from itertools import product
+import os
 from pathlib import Path
 import platform
 import subprocess
@@ -42,6 +43,7 @@ from mibici.config import (
     DATA_INVENTORY,
     EXTERNAL_DATA_DIR,
     HGB_PARAMS,
+    MLFLOW_EXPERIMENT_NAME,
     P3_MAX_K,
     PROCESSED_DATA_DIR,
     PROJ_ROOT,
@@ -719,6 +721,9 @@ def run_p2(
         )
         for target_name in p2_train.TARGET_NAMES.values()
     }
+
+    if not os.getenv("MLFLOW_EXPERIMENT_ID"):
+        mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
 
     with mlflow.start_run():
         mlflow.set_tags(
