@@ -35,7 +35,6 @@ from mibici.config import (
 from mibici.features import FLOW_COLUMNS, LAG_HOURS, REQUIRED_COLUMNS, ROLLING_WINDOWS
 from mibici.modeling.p2_catalog import (
     CATALOG_FILENAME,
-    PROVENANCE_FILENAME,
     load_catalog,
 )
 from mibici.modeling.p2_targets import (
@@ -461,7 +460,7 @@ def verify_label_reproducibility(
             "Las etiquetas guardadas no se reproducen exactamente desde el Parquet horario."
         )
 
-    provenance_path = catalog_path.with_name(PROVENANCE_FILENAME)
+    provenance_path = catalog_path.with_suffix(".provenance.json")
     if not provenance_path.is_file():
         raise FileNotFoundError(f"Falta la procedencia del catálogo: {provenance_path}.")
     provenance = json.loads(provenance_path.read_text(encoding="utf-8"))

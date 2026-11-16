@@ -779,10 +779,10 @@ Se comparan las 17 columnas que importan al modelo: sus 15 variables de entrada 
 
 ### 15.2. Ejecución
 
-Requiere los Parquets de `ingest` y `p2_targets` y el catálogo de `p2_catalog` (sección 7.4). Antes de generar los reportes se verifica que las etiquetas de reference se reproduzcan exactamente con esos archivos (`verify_label_reproducibility`), para que ambos periodos usen los mismos umbrales de presión; si no coinciden, el comando falla. Evidently ya está en `requirements.txt`. Desde la raíz del repositorio:
+Requiere los Parquets de `ingest` y `p2_targets` y el catálogo histórico de septiembre de 2026 con su archivo de procedencia. El catálogo predeterminado del proyecto ahora es el de octubre y no reproduce estos resultados. Antes de generar los reportes se verifica que las etiquetas de reference se reproduzcan exactamente con esos archivos (`verify_label_reproducibility`), para que ambos periodos usen los mismos umbrales de presión; si no coinciden, el comando falla. Evidently ya está en `requirements.txt`. Desde la raíz del repositorio:
 
 ```bash
-python -m mibici.monitoring.drift_report
+python -m mibici.monitoring.drift_report --catalog-path data/external/nomenclatura_2026_09.csv
 ```
 
 Tarda alrededor de un minuto y escribe en `reports/evidently/`:
@@ -802,7 +802,9 @@ Los HTML se abren directamente en el navegador. Las pruebas del módulo están e
 - **Drift significativo en 3 de 17 variables.** El encabezado "Dataset Drift is NOT detected" solo indica que no se alcanza el criterio global por defecto de Evidently (50 % de las variables).
 - **`month`** (Jensen-Shannon 0.83): train contiene los meses 1-8 y current los meses 11-12, valores que el modelo nunca vio.
 - Los rezagos y las medias móviles, la señal principal del modelo, no superan el umbral (Wasserstein ≤ 0.06).
-- **Las dos etiquetas** (prueba Z, p < 0.001): la prevalencia de presión de bicicletas baja de 4.34 % a 3.09 % (−29 %) y la de anclajes de 4.10 % a 3.43 % (−16 %). Explica la caída de precision y AP observada en [reports/test_evaluation.md](reports/test_evaluation.md).
+- **Las dos etiquetas** (prueba Z, p < 0.001): la prevalencia de presión de bicicletas baja de 4.34 % a 3.09 % (−29 %) y la de anclajes de 4.10 % a 3.43 % (−16 %). La menor prevalencia puede contribuir a la caída de precision y AP, pero no demuestra su causa; las ventanas solapadas también limitan la interpretación del p-value.
 - Calidad: sin columnas vacías, constantes ni duplicadas; los únicos faltantes son las primeras horas sin historia de los rezagos.
 
 La conclusión y las recomendaciones (reentrenar incluyendo meses recientes y revisar el umbral de decisión) están en [docs/drift_interpretation.md](docs/drift_interpretation.md).
+
+La comparación retrospectiva entre el champion y otra variante HGB, sus limitaciones y los comandos reproducibles están en [docs/ab_testing_summary.md](docs/ab_testing_summary.md). Los insumos y su estado frente a la rúbrica están en [docs/deliverable8_audit_summary.md](docs/deliverable8_audit_summary.md).
