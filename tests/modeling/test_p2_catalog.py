@@ -92,6 +92,16 @@ def test_load_catalog_can_preserve_invalid_rows_for_audit(tmp_path: Path):
     assert p2_catalog.catalog_quality(loaded)["invalid_capacity_rows"] == 1
 
 
+@pytest.mark.parametrize("encoding", ["utf-8", "cp1252"])
+def test_load_catalog_preserves_names_in_both_source_encodings(tmp_path: Path, encoding: str):
+    path = tmp_path / "catalog.csv"
+    catalog = make_catalog()
+    catalog.loc[0, "name"] = "Estación"
+    catalog.to_csv(path, index=False, encoding=encoding)
+
+    assert p2_catalog.load_catalog(path)["name"].iloc[0] == "Estación"
+
+
 def test_download_catalog_saves_csv_hash_and_provenance(tmp_path, monkeypatch):
     """Descargar con respuesta simulada y persistir trazabilidad."""
     monkeypatch.setattr(p2_catalog, "EXTERNAL_DATA_DIR", tmp_path)

@@ -122,3 +122,12 @@ def test_train_thresholds_reject_labels_from_a_different_build(tmp_path):
 
     with pytest.raises(ValueError, match="no se reproducen exactamente"):
         train_thresholds(*paths)
+
+
+def test_train_thresholds_use_provenance_of_supplied_catalog(tmp_path):
+    expected, (label_path, hourly_path, catalog_path) = _write_label_artifacts(tmp_path)
+    historic = tmp_path / "nomenclatura_2026_09.csv"
+    catalog_path.rename(historic)
+    catalog_path.with_name(PROVENANCE_FILENAME).rename(historic.with_suffix(".provenance.json"))
+
+    assert train_thresholds(label_path, hourly_path, historic) == expected

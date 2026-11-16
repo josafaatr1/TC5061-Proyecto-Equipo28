@@ -152,7 +152,10 @@ def load_catalog(catalog_path: Path, strict: bool = True) -> pd.DataFrame:
     if not catalog_path.is_file():
         raise FileNotFoundError(f"No se encontró el catálogo: {catalog_path}")
     try:
-        raw_catalog = pd.read_csv(catalog_path, encoding="cp1252")
+        try:
+            raw_catalog = pd.read_csv(catalog_path, encoding="utf-8-sig")
+        except UnicodeDecodeError:
+            raw_catalog = pd.read_csv(catalog_path, encoding="cp1252")
     except (OSError, UnicodeDecodeError, pd.errors.ParserError) as error:
         raise ValueError(f"No fue posible leer el catálogo CSV: {catalog_path}") from error
 

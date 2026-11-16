@@ -4,11 +4,11 @@ Análisis del reporte de Evidently que compara los datos con los que se entrenó
 
 ## Resumen
 
-**Sí hay drift.** Evidently marca 3 de 17 variables: `month` (drift estructural: noviembre y diciembre nunca aparecen en train) y las dos etiquetas (la prevalencia de presión baja 29 % en bicicletas y 16 % en anclajes). Las variables de flujo reciente, que son la señal principal del modelo, siguen estables. El modelo conserva su capacidad de ordenar estaciones por riesgo, pero pierde precision con el umbral actual: conviene reentrenarlo con meses recientes.
+**Sí hay drift.** Evidently marca 3 de 17 variables: `month` (drift estructural: noviembre y diciembre nunca aparecen en train) y las dos etiquetas (la prevalencia de presión baja 29 % en bicicletas y 16 % en anclajes). Las variables de flujo reciente no superan sus umbrales de drift. El modelo sigue por encima del baseline de AP, aunque pierde precision con el umbral actual; conviene evaluar un candidato reentrenado con meses recientes.
 
 El encabezado del reporte, "Dataset Drift is NOT detected", solo significa que no se alcanzó el criterio global por defecto de Evidently (50 % de las variables con drift); no significa que los datos no hayan cambiado.
 
-Reportes interactivos: [data_drift_report.html](../reports/evidently/data_drift_report.html) y [data_quality_report.html](../reports/evidently/data_quality_report.html). Resultados por variable en [drift_summary.json](../reports/evidently/drift_summary.json). Para regenerarlos: `python -m mibici.monitoring.drift_report` (sección 15 del README).
+Reportes interactivos: [data_drift_report.html](../reports/evidently/data_drift_report.html) y [data_quality_report.html](../reports/evidently/data_quality_report.html). Resultados por variable en [drift_summary.json](../reports/evidently/drift_summary.json). Para regenerarlos con el catálogo histórico, véase la sección 15 del README.
 
 ## 1. Configuración del análisis
 
@@ -49,7 +49,7 @@ Septiembre-octubre no se usa como current porque es la partición validation con
 
 En el HTML, la tabla está ordenada por puntaje: las dos etiquetas (p-value ≈ 0) aparecen en la segunda página.
 
-Evidently concluye **"Dataset Drift is NOT detected"** porque 3 de 17 variables (17.6 %) no alcanzan el criterio global por defecto del 50 %. Esa conclusión es engañosa para este modelo: las tres variables con drift son justamente las que más afectan su desempeño (sección 4).
+Evidently concluye **"Dataset Drift is NOT detected"** porque 3 de 17 variables (17.6 %) no alcanzan el criterio global por defecto del 50 %. Ese agregado no identifica la importancia de cada variable ni demuestra cuánto afectan al desempeño (sección 4).
 
 ## 3. Calidad de los datos
 
@@ -62,7 +62,7 @@ Evidently concluye **"Dataset Drift is NOT detected"** porque 3 de 17 variables 
 | Variables casi constantes | 2 | 2 | Las dos etiquetas (≈96 % de ceros): es el desbalance de clases propio de P2, no un defecto |
 | Máximo de `departures_lag_1h` | 75 | 109 | En diciembre aparecen valores fuera del rango visto en train |
 
-La calidad de current es comparable a la de reference: el drift no se explica por errores de ingesta.
+Los indicadores muestran una calidad comparable en estas dimensiones; no descartan todos los posibles errores de ingesta.
 
 ## 4. Variables con drift significativo y sus implicaciones
 
@@ -94,7 +94,7 @@ Además, la tendencia ya existía dentro de train: la presión de bicicletas baj
 | Presión de bicicletas | 0.324 | 0.262 | 0.148 → 0.119 | 0.841 → 0.818 | 7.9× → 8.5× |
 | Presión de anclajes | 0.388 | 0.365 | 0.154 → 0.136 | 0.849 → 0.841 | 9.2× → 10.6× |
 
-- **La caída de AP y de precision se explica sobre todo por la menor prevalencia.** El AP de un clasificador aleatorio es igual a la prevalencia; normalizado por ella, el modelo ordena igual o mejor en current (8.5× frente a 7.9×). La capacidad de distinguir estaciones en riesgo se conserva.
+- **La menor prevalencia puede contribuir a la caída de AP y precision.** El AP de un clasificador aleatorio es igual a la prevalencia; la relación AP/prevalencia pasa de 7.9× a 8.5×. Esa relación no prueba que la capacidad de ordenar se haya conservado ni identifica una causa.
 - **El umbral de decisión fijo (0.5) queda desalineado.** Con menos positivos reales y el mismo umbral, crece la proporción de falsas alarmas: en current hubo 100,714 falsos positivos contra 13,537 verdaderos positivos en presión de bicicletas. Para la operación (rebalanceo de bicicletas) eso significa más visitas innecesarias.
 - **Las entradas principales del modelo siguen estables.** Los rezagos y las medias móviles, que son la señal predictiva principal, no tienen drift significativo; por eso el modelo sigue muy por encima del baseline (AP 0.262 frente a 0.031).
 - **Valores fuera de rango.** Los máximos nuevos (109 salidas en una hora frente a 75) caen en la última hoja de cada árbol: el modelo satura su respuesta en lugar de extrapolar. Afecta a pocas filas.
@@ -105,10 +105,11 @@ Además, la tendencia ya existía dentro de train: la presión de bicicletas baj
 2. **Reentrenar incluyendo los meses recientes** (al menos septiembre-diciembre o un año completo) para que `month` cubra todo el calendario y el modelo aprenda la prevalencia actual. Es la versión alternativa natural para el A/B testing.
 3. **Revisar el umbral de decisión** con datos recientes, o reemplazar `month` por una codificación cíclica, para reducir la dependencia de meses vistos.
 4. **No depender del veredicto global de Evidently.** En el monitoreo continuo conviene alertar por variable (categorías nuevas en `month`, drift en las etiquetas) y acompañar la prueba Z con un umbral de magnitud, por ejemplo un cambio relativo de prevalencia mayor a 20 %, porque con muestras grandes la prueba Z marca hasta diferencias mínimas.
-5. **Repetir el reporte cada mes** con `python -m mibici.monitoring.drift_report`; MiBici ya publica los datos de 2026, que serían el siguiente current.
+5. **Proponer monitoreo mensual.** El comando actual está fijado a 2025; antes de procesar 2026 hay que implementar y validar periodos parametrizables y disponer de datos compatibles.
 
 ## 6. Limitaciones
 
 - Noviembre-diciembre es el test reservado del proyecto y ya se usó una vez para la evaluación final; aquí solo se analiza, no se usa para entrenar ni para elegir modelos.
 - Son dos meses con estacionalidad marcada (vacaciones); parte del cambio puede ser estacional y no permanente.
+- Las ventanas de tres horas se solapan y hay dependencia temporal y por estación. La prueba Z nominal supone independencia; su p-value no debe interpretarse como evidencia inferencial independiente sin un análisis por bloques.
 - Las etiquetas P2 son proxies construidos con el catálogo de capacidades de 2026-09, no inventarios reales de bicicletas o anclajes.
