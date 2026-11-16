@@ -18,10 +18,19 @@ from mibici.config import EXTERNAL_DATA_DIR, PROCESSED_DATA_DIR, START_DATE
 
 app = typer.Typer()
 
+
+def json_serializable(value):
+    """Convert NumPy scalar values into native Python types."""
+    if isinstance(value, np.generic):
+        return value.item()
+
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
 OFFICIAL_SOURCE_PAGE = "https://www.mibici.net/es/datos-abiertos/"
-OFFICIAL_CATALOG_URL = "https://www.mibici.net/site/assets/files/1118/nomenclatura_2026_09.csv"
-CATALOG_FILENAME = "nomenclatura_2026_09.csv"
-PROVENANCE_FILENAME = "nomenclatura_2026_09.provenance.json"
+OFFICIAL_CATALOG_URL = "https://www.mibici.net/site/assets/files/1118/nomenclatura_2026_10.csv"
+CATALOG_FILENAME = "nomenclatura_2026_10.csv"
+PROVENANCE_FILENAME = "nomenclatura_2026_10.provenance.json"
 AUDIT_FILENAME = "p2_capacity_audit_2025_train_validation.json"
 REQUIRED_COLUMNS = ("id", "name", "latitude", "longitude", "dpcapacity")
 
@@ -94,7 +103,7 @@ def download_catalog(
     digest = _sha256(content)
     provenance = {
         "catalog_filename": CATALOG_FILENAME,
-        "catalog_version": "2026-09",
+        "catalog_version": "2026-10",
         "source_page": OFFICIAL_SOURCE_PAGE,
         "source_url": url,
         "sha256": digest,
@@ -143,7 +152,7 @@ def load_catalog(catalog_path: Path, strict: bool = True) -> pd.DataFrame:
     if not catalog_path.is_file():
         raise FileNotFoundError(f"No se encontró el catálogo: {catalog_path}")
     try:
-        raw_catalog = pd.read_csv(catalog_path, encoding="utf-8")
+        raw_catalog = pd.read_csv(catalog_path, encoding="cp1252")
     except (OSError, UnicodeDecodeError, pd.errors.ParserError) as error:
         raise ValueError(f"No fue posible leer el catálogo CSV: {catalog_path}") from error
 
@@ -294,23 +303,38 @@ def main() -> None:
         catalog,
     )
     report = {
-        "catalog_version": "2026-09",
+        "catalog_version": "2026-10",
         "source_page": OFFICIAL_SOURCE_PAGE,
         "source_url": OFFICIAL_CATALOG_URL,
         "catalog_path": str(catalog_path),
         "sha256": digest,
         "temporal_limitation": (
-            "Este catálogo es de 2026-09; sus capacidades no están verificadas para el año 2025."
+            "Este catálogo es de 2026-10; sus capacidades no están verificadas "
+            "históricamente para el año 2025."
         ),
         "catalog_quality": quality,
         "coverage": coverage,
     }
     report_path = catalog_path.parent / AUDIT_FILENAME
     report_path.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        json.dumps(
+            report,
+            ensure_ascii=False,
+            indent=2,
+            default=json_serializable,
+        )
+        + "\n",
         encoding="utf-8",
     )
-    logger.info("Auditoría de capacidades P2:\n{}", json.dumps(report, indent=2))
+    logger.info(
+        "Auditoría de capacidades P2:\n{}",
+        json.dumps(
+            report,
+            ensure_ascii=False,
+            indent=2,
+            default=json_serializable,
+        ),
+    )
     logger.success("Auditoría guardada en: {}", report_path)
 
 

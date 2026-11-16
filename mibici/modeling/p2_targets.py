@@ -498,7 +498,7 @@ def build_p2_targets(
     audit["thresholds_train_only"] = asdict(thresholds)
     audit["class_and_pressure_distribution"] = summarize_targets(labeled_windows)
     audit["catalog_capacity_temporal_warning"] = (
-        "Las capacidades de nomenclatura_2026_09.csv son aproximaciones "
+        "Las capacidades de nomenclatura_2026_10.csv son aproximaciones "
         "retrospectivas no validadas para 2025."
     )
     return P2TargetResult(

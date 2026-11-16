@@ -215,18 +215,32 @@ def register_spec(client: mlflow.MlflowClient, experiment_id: str, spec: Registr
     return {**summary, "status": "nuevo champion"}
 
 
-def register_models(experiment_name: str = MLFLOW_EXPERIMENT_NAME) -> pd.DataFrame:
-    """Registrar los modelos de P1, P2 y P3 y devolver un resumen."""
+def register_models(
+    experiment_name: str = MLFLOW_EXPERIMENT_NAME,
+    question: str | None = None,
+) -> pd.DataFrame:
+    """Registrar los mejores modelos de una pregunta o de todas."""
     experiment = mlflow.get_experiment_by_name(experiment_name)
+
     if experiment is None:
         raise ValueError(f"No existe el experimento {experiment_name}. Entrena primero.")
 
     client = mlflow.MlflowClient()
+
+    specs = REGISTERED_MODELS
+
+    if question is not None:
+        specs = tuple(spec for spec in REGISTERED_MODELS if spec.question == question.upper())
+
     summary = pd.DataFrame(
-        [register_spec(client, experiment.experiment_id, spec) for spec in REGISTERED_MODELS]
+        [register_spec(client, experiment.experiment_id, spec) for spec in specs]
     )
+
     if mlflow.active_run() is not None:
-        mlflow.log_text(summary.to_csv(index=False), "reports/registry_summary.csv")
+        mlflow.log_text(
+            summary.to_csv(index=False),
+            "reports/registry_summary.csv",
+        )
 
     return summary
 
@@ -239,6 +253,22 @@ def main(experiment_name: str = MLFLOW_EXPERIMENT_NAME):
         mlflow.set_tag("mlflow.runName", "register-models")
         summary = register_models(experiment_name)
     logger.info(f"Model Registry:\n{summary.to_string(index=False)}")
+
+
+@app.command("p2")
+def register_p2_command(
+    experiment_name: str = MLFLOW_EXPERIMENT_NAME,
+):
+    """Registrar los modelos seleccionados de P2."""
+    mlflow.set_experiment(experiment_name)
+    with mlflow.start_run():
+        mlflow.set_tag("mlflow.runName", "register-p2-models")
+        summary = register_models(
+            experiment_name,
+            question="P2",
+        )
+
+    logger.info(f"Model Registry P2:\n{summary.to_string(index=False)}")
 
 
 if __name__ == "__main__":
