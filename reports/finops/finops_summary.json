@@ -1,0 +1,711 @@
+{
+  "parameters": {
+    "slo_p95_ms": 300.0,
+    "max_failure_rate": 0.01,
+    "target_utilization": 0.7,
+    "queries_per_trip": 3,
+    "growth_factor": 10,
+    "batch_startup_seconds": 30.0,
+    "hours_per_month": 730
+  },
+  "pricing": {
+    "region": "mx-central-1",
+    "region_name": "Mexico (Central)",
+    "retrieved_at": "2026-11-22",
+    "sources": {
+      "ec2": {
+        "url": "https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/ec2-ondemand-without-sec-sel/Mexico%20(Central)/Linux/index.json",
+        "publication_date": "2026-11-21T00:48:16Z",
+        "notes": "Archivo de precios que consume la página oficial https://aws.amazon.com/ec2/pricing/on-demand/."
+      },
+      "fargate": {
+        "url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/mx-central-1/index.json",
+        "publication_date": "2026-11-11T23:46:23Z",
+        "notes": "AWS Price List API (oferta AmazonECS). Fargate cobra por segundo con mínimo de un minuto."
+      }
+    }
+  },
+  "capacity_runs": [
+    {
+      "name": "capacity",
+      "label": "1 vCPU, 1 proceso",
+      "vcpu": 1.0,
+      "memory_limit_gib": 0.5,
+      "workers": 1,
+      "omp_threads": null,
+      "steps": [
+        {
+          "users": 1,
+          "rps": 71.4,
+          "p50_ms": 13.0,
+          "p95_ms": 20.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 2,
+          "rps": 51.9,
+          "p50_ms": 35.0,
+          "p95_ms": 62.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 4,
+          "rps": 41.1,
+          "p50_ms": 92.0,
+          "p95_ms": 160.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 8,
+          "rps": 29.7,
+          "p50_ms": 260.0,
+          "p95_ms": 440.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 16,
+          "rps": 26.450000000000003,
+          "p50_ms": 585.0,
+          "p95_ms": 920.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 32,
+          "rps": 25.35,
+          "p50_ms": 1200.0,
+          "p95_ms": 1700.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        }
+      ],
+      "sustainable": {
+        "users": 1,
+        "rps": 71.4,
+        "p50_ms": 13.0,
+        "p95_ms": 20.0,
+        "failure_rate": 0.0,
+        "seconds": 20.0
+      },
+      "api": {
+        "cpu_avg_percent": 96.17516129032258,
+        "cpu_p95_percent": 103.7445,
+        "memory_avg_mib": 284.9677419354838,
+        "memory_max_mib": 294.8,
+        "samples": 62
+      },
+      "mlflow": {
+        "cpu_avg_percent": 2.4219354838709672,
+        "cpu_p95_percent": 13.061499999999999,
+        "memory_avg_mib": 1791.471483870968,
+        "memory_max_mib": 1800.192,
+        "samples": 62
+      }
+    },
+    {
+      "name": "capacity_omp1",
+      "label": "1 vCPU, 1 proceso, OMP=1",
+      "vcpu": 1.0,
+      "memory_limit_gib": 0.5,
+      "workers": 1,
+      "omp_threads": 1,
+      "steps": [
+        {
+          "users": 1,
+          "rps": 69.9,
+          "p50_ms": 13.0,
+          "p95_ms": 20.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 2,
+          "rps": 49.8,
+          "p50_ms": 37.0,
+          "p95_ms": 62.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 4,
+          "rps": 42.1,
+          "p50_ms": 94.0,
+          "p95_ms": 150.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 8,
+          "rps": 29.299999999999997,
+          "p50_ms": 270.0,
+          "p95_ms": 450.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 16,
+          "rps": 26.85,
+          "p50_ms": 590.0,
+          "p95_ms": 910.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 32,
+          "rps": 26.200000000000003,
+          "p50_ms": 1200.0,
+          "p95_ms": 1700.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        }
+      ],
+      "sustainable": {
+        "users": 1,
+        "rps": 69.9,
+        "p50_ms": 13.0,
+        "p95_ms": 20.0,
+        "failure_rate": 0.0,
+        "seconds": 20.0
+      },
+      "api": {
+        "cpu_avg_percent": 95.80032258064516,
+        "cpu_p95_percent": 103.7265,
+        "memory_avg_mib": 186.41129032258058,
+        "memory_max_mib": 196.2,
+        "samples": 62
+      },
+      "mlflow": {
+        "cpu_avg_percent": 2.542096774193549,
+        "cpu_p95_percent": 12.898499999999997,
+        "memory_avg_mib": 1796.8061935483868,
+        "memory_max_mib": 1800.192,
+        "samples": 62
+      }
+    },
+    {
+      "name": "capacity_2cpu",
+      "label": "2 vCPU, 1 proceso",
+      "vcpu": 2.0,
+      "memory_limit_gib": 0.5,
+      "workers": 1,
+      "omp_threads": null,
+      "steps": [
+        {
+          "users": 1,
+          "rps": 66.6,
+          "p50_ms": 14.0,
+          "p95_ms": 18.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 2,
+          "rps": 39.9,
+          "p50_ms": 50.0,
+          "p95_ms": 81.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 4,
+          "rps": 23.049999999999997,
+          "p50_ms": 180.0,
+          "p95_ms": 290.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 8,
+          "rps": 33.75,
+          "p50_ms": 230.0,
+          "p95_ms": 260.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 16,
+          "rps": 31.2,
+          "p50_ms": 510.0,
+          "p95_ms": 555.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 32,
+          "rps": 29.6,
+          "p50_ms": 1100.0,
+          "p95_ms": 1100.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        }
+      ],
+      "sustainable": {
+        "users": 1,
+        "rps": 66.6,
+        "p50_ms": 14.0,
+        "p95_ms": 18.0,
+        "failure_rate": 0.0,
+        "seconds": 20.0
+      },
+      "api": {
+        "cpu_avg_percent": 171.2006451612903,
+        "cpu_p95_percent": 206.798,
+        "memory_avg_mib": 187.34838709677416,
+        "memory_max_mib": 201.0,
+        "samples": 62
+      },
+      "mlflow": {
+        "cpu_avg_percent": 2.130322580645161,
+        "cpu_p95_percent": 11.344999999999994,
+        "memory_avg_mib": 1804.6843870967734,
+        "memory_max_mib": 1811.456,
+        "samples": 62
+      }
+    },
+    {
+      "name": "capacity_2cpu_2workers",
+      "label": "2 vCPU, 2 procesos",
+      "vcpu": 2.0,
+      "memory_limit_gib": 1.0,
+      "workers": 2,
+      "omp_threads": null,
+      "steps": [
+        {
+          "users": 1,
+          "rps": 14.8,
+          "p50_ms": 68.0,
+          "p95_ms": 72.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 2,
+          "rps": 29.6,
+          "p50_ms": 68.0,
+          "p95_ms": 77.5,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 4,
+          "rps": 26.25,
+          "p50_ms": 170.0,
+          "p95_ms": 210.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 8,
+          "rps": 14.1,
+          "p50_ms": 490.0,
+          "p95_ms": 1200.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 16,
+          "rps": 46.1,
+          "p50_ms": 350.0,
+          "p95_ms": 400.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 32,
+          "rps": 42.150000000000006,
+          "p50_ms": 710.0,
+          "p95_ms": 910.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        }
+      ],
+      "sustainable": {
+        "users": 2,
+        "rps": 29.6,
+        "p50_ms": 68.0,
+        "p95_ms": 77.5,
+        "failure_rate": 0.0,
+        "seconds": 20.0
+      },
+      "api": {
+        "cpu_avg_percent": 175.3766129032258,
+        "cpu_p95_percent": 222.22699999999998,
+        "memory_avg_mib": 398.71774193548384,
+        "memory_max_mib": 413.3,
+        "samples": 62
+      },
+      "mlflow": {
+        "cpu_avg_percent": 2.343870967741935,
+        "cpu_p95_percent": 12.184999999999997,
+        "memory_avg_mib": 1808.169290322581,
+        "memory_max_mib": 1808.384,
+        "samples": 62
+      }
+    },
+    {
+      "name": "capacity_2cpu_2workers_omp1",
+      "label": "2 vCPU, 2 procesos, OMP=1",
+      "vcpu": 2.0,
+      "memory_limit_gib": 1.0,
+      "workers": 2,
+      "omp_threads": 1,
+      "steps": [
+        {
+          "users": 1,
+          "rps": 15.2,
+          "p50_ms": 66.0,
+          "p95_ms": 71.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 2,
+          "rps": 29.5,
+          "p50_ms": 67.0,
+          "p95_ms": 76.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 4,
+          "rps": 45.95,
+          "p50_ms": 88.5,
+          "p95_ms": 100.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 8,
+          "rps": 74.8,
+          "p50_ms": 98.0,
+          "p95_ms": 170.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 16,
+          "rps": 95.1,
+          "p50_ms": 160.0,
+          "p95_ms": 270.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        },
+        {
+          "users": 32,
+          "rps": 91.75,
+          "p50_ms": 320.0,
+          "p95_ms": 540.0,
+          "failure_rate": 0.0,
+          "seconds": 20
+        }
+      ],
+      "sustainable": {
+        "users": 16,
+        "rps": 95.1,
+        "p50_ms": 160.0,
+        "p95_ms": 270.0,
+        "failure_rate": 0.0,
+        "seconds": 20.0
+      },
+      "api": {
+        "cpu_avg_percent": 133.62370967741933,
+        "cpu_p95_percent": 213.9105,
+        "memory_avg_mib": 398.08870967741933,
+        "memory_max_mib": 410.0,
+        "samples": 62
+      },
+      "mlflow": {
+        "cpu_avg_percent": 2.406935483870968,
+        "cpu_p95_percent": 12.297499999999998,
+        "memory_avg_mib": 1808.8134193548383,
+        "memory_max_mib": 1809.408,
+        "samples": 62
+      }
+    }
+  ],
+  "demand_profile": {
+    "stations": 371,
+    "trips_total": 4532032,
+    "days": 366,
+    "trips_per_day_mean": 12382.601092896175,
+    "trips_per_day_max": 15966,
+    "peak_trips_per_hour": 1779,
+    "closed_hours": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "operating_hours_per_day": 20,
+    "mean_trips_by_hour": {
+      "0": 76.3,
+      "1": 0.0,
+      "2": 0.0,
+      "3": 0.0,
+      "4": 0.0,
+      "5": 100.6,
+      "6": 347.3,
+      "7": 690.4,
+      "8": 979.4,
+      "9": 688.5,
+      "10": 601.4,
+      "11": 608.0,
+      "12": 640.9,
+      "13": 725.1,
+      "14": 816.9,
+      "15": 826.4,
+      "16": 785.2,
+      "17": 930.5,
+      "18": 1152.9,
+      "19": 867.6,
+      "20": 649.2,
+      "21": 495.6,
+      "22": 284.4,
+      "23": 149.8
+    }
+  },
+  "scenarios": [
+    {
+      "key": "batch",
+      "label": "Lote por estación",
+      "monthly_inferences": 225691.6666666667,
+      "peak_rps": 6.183333333333334,
+      "description": "Una predicción por estación cada hora de operación (371 estaciones, 20 h/día)."
+    },
+    {
+      "key": "app",
+      "label": "App de usuarios",
+      "monthly_inferences": 1129912.349726776,
+      "peak_rps": 1.4825,
+      "description": "3 consultas por viaje; pico de 1779 viajes/hora."
+    },
+    {
+      "key": "app_x10",
+      "label": "App de usuarios x10",
+      "monthly_inferences": 11299123.497267758,
+      "peak_rps": 14.825,
+      "description": "Crecimiento de 10 veces sobre el escenario de app."
+    }
+  ],
+  "options": [
+    {
+      "key": "compose_t3_medium",
+      "label": "Compose actual: API + MLflow en t3.medium",
+      "run_name": "capacity",
+      "usd_per_hour": 0.0437,
+      "hours_per_month": 730,
+      "notes": "Configuración por defecto de docker-compose.yml (API 1 vCPU, MLflow 1 vCPU, 3 GiB en total). MLflow ocupa la mayor parte de la memoria.",
+      "capacity_rps": 71.4,
+      "usable_rps": 49.980000000000004,
+      "monthly_usd": 31.901000000000003,
+      "usd_per_million_at_capacity": 0.17001244942421412,
+      "usd_per_million_planned": 0.2428749277488773
+    },
+    {
+      "key": "api_t3_small",
+      "label": "API sola optimizada en t3.small",
+      "run_name": "capacity_2cpu_2workers_omp1",
+      "usd_per_hour": 0.0218,
+      "hours_per_month": 730,
+      "notes": "MLflow fuera de la ruta de inferencia (los modelos van en la imagen); 2 procesos con OMP_NUM_THREADS=1.",
+      "capacity_rps": 95.1,
+      "usable_rps": 66.57,
+      "monthly_usd": 15.914,
+      "usd_per_million_at_capacity": 0.06367566304474823,
+      "usd_per_million_planned": 0.0909652329210689
+    },
+    {
+      "key": "api_t4g_small",
+      "label": "API sola optimizada en t4g.small (Graviton)",
+      "run_name": "capacity_2cpu_2workers_omp1",
+      "usd_per_hour": 0.0176,
+      "hours_per_month": 730,
+      "notes": "Igual que t3.small en ARM; requiere construir y validar la imagen arm64.",
+      "capacity_rps": 95.1,
+      "usable_rps": 66.57,
+      "monthly_usd": 12.848,
+      "usd_per_million_at_capacity": 0.051407874751723336,
+      "usd_per_million_planned": 0.07343982107389048
+    },
+    {
+      "key": "api_t4g_small_scheduled",
+      "label": "t4g.small apagada en horas sin servicio",
+      "run_name": "capacity_2cpu_2workers_omp1",
+      "usd_per_hour": 0.0176,
+      "hours_per_month": 608.3333333333334,
+      "notes": "Encendida solo 20 h/día: MiBici no registra viajes en el resto.",
+      "capacity_rps": 95.1,
+      "usable_rps": 66.57,
+      "monthly_usd": 10.706666666666669,
+      "usd_per_million_at_capacity": 0.051407874751723336,
+      "usd_per_million_planned": 0.07343982107389048
+    },
+    {
+      "key": "fargate_1vcpu",
+      "label": "Fargate 1 vCPU / 2 GB siempre encendido",
+      "run_name": "capacity",
+      "usd_per_hour": 0.0518385,
+      "hours_per_month": 730,
+      "notes": "Sin administrar servidores; 1 vCPU exige al menos 2 GB en Fargate.",
+      "capacity_rps": 71.4,
+      "usable_rps": 49.980000000000004,
+      "monthly_usd": 37.842105000000004,
+      "usd_per_million_at_capacity": 0.20167483660130717,
+      "usd_per_million_planned": 0.2881069094304389
+    }
+  ],
+  "scenario_costs": [
+    {
+      "option": "compose_t3_medium",
+      "scenario": "batch",
+      "replicas": 1,
+      "monthly_usd": 31.901000000000003,
+      "usd_per_million": 141.3477088948787,
+      "utilization": 0.00120279593318809
+    },
+    {
+      "option": "compose_t3_medium",
+      "scenario": "app",
+      "replicas": 1,
+      "monthly_usd": 31.901000000000003,
+      "usd_per_million": 28.233163402200166,
+      "utilization": 0.006021728667180289
+    },
+    {
+      "option": "compose_t3_medium",
+      "scenario": "app_x10",
+      "replicas": 1,
+      "monthly_usd": 31.901000000000003,
+      "usd_per_million": 2.8233163402200163,
+      "utilization": 0.060217286671802886
+    },
+    {
+      "option": "api_t3_small",
+      "scenario": "batch",
+      "replicas": 1,
+      "monthly_usd": 15.914,
+      "usd_per_million": 70.5121293800539,
+      "utilization": 0.0009030455271254431
+    },
+    {
+      "option": "api_t3_small",
+      "scenario": "app",
+      "replicas": 1,
+      "monthly_usd": 15.914,
+      "usd_per_million": 14.084278310479714,
+      "utilization": 0.004521045497756811
+    },
+    {
+      "option": "api_t3_small",
+      "scenario": "app_x10",
+      "replicas": 1,
+      "monthly_usd": 15.914,
+      "usd_per_million": 1.4084278310479714,
+      "utilization": 0.04521045497756811
+    },
+    {
+      "option": "api_t4g_small",
+      "scenario": "batch",
+      "replicas": 1,
+      "monthly_usd": 12.848,
+      "usd_per_million": 56.92722371967655,
+      "utilization": 0.0009030455271254431
+    },
+    {
+      "option": "api_t4g_small",
+      "scenario": "app",
+      "replicas": 1,
+      "monthly_usd": 12.848,
+      "usd_per_million": 11.370793498368945,
+      "utilization": 0.004521045497756811
+    },
+    {
+      "option": "api_t4g_small",
+      "scenario": "app_x10",
+      "replicas": 1,
+      "monthly_usd": 12.848,
+      "usd_per_million": 1.1370793498368947,
+      "utilization": 0.04521045497756811
+    },
+    {
+      "option": "api_t4g_small_scheduled",
+      "scenario": "batch",
+      "replicas": 1,
+      "monthly_usd": 10.706666666666669,
+      "usd_per_million": 47.43935309973046,
+      "utilization": 0.0010836546325505318
+    },
+    {
+      "option": "api_t4g_small_scheduled",
+      "scenario": "app",
+      "replicas": 1,
+      "monthly_usd": 10.706666666666669,
+      "usd_per_million": 9.475661248640789,
+      "utilization": 0.005425254597308173
+    },
+    {
+      "option": "api_t4g_small_scheduled",
+      "scenario": "app_x10",
+      "replicas": 1,
+      "monthly_usd": 10.706666666666669,
+      "usd_per_million": 0.947566124864079,
+      "utilization": 0.054252545973081726
+    },
+    {
+      "option": "fargate_1vcpu",
+      "scenario": "batch",
+      "replicas": 1,
+      "monthly_usd": 37.842105000000004,
+      "usd_per_million": 167.67169811320755,
+      "utilization": 0.00120279593318809
+    },
+    {
+      "option": "fargate_1vcpu",
+      "scenario": "app",
+      "replicas": 1,
+      "monthly_usd": 37.842105000000004,
+      "usd_per_million": 33.49118629347719,
+      "utilization": 0.006021728667180289
+    },
+    {
+      "option": "fargate_1vcpu",
+      "scenario": "app_x10",
+      "replicas": 1,
+      "monthly_usd": 37.842105000000004,
+      "usd_per_million": 3.349118629347719,
+      "utilization": 0.060217286671802886
+    }
+  ],
+  "batch": {
+    "seconds_per_run": 35.19607843137255,
+    "billed_seconds_per_run": 60.0,
+    "runs_per_month": 608.3333333333334,
+    "monthly_usd": 0.5255847916666667,
+    "usd_per_million": 2.3287735849056603
+  },
+  "optimizations": {
+    "separate_mlflow": 0.5011441647597255,
+    "graviton": 0.19266055045871552,
+    "schedule_off_hours": 0.16666666666666655,
+    "combined": 0.6643783371472157,
+    "batch_vs_always_on": 0.9861111111111112,
+    "process_concurrency": {
+      "users": 16,
+      "baseline_rps": 26.450000000000003,
+      "baseline_p95_ms": 920.0,
+      "optimized_rps": 95.1,
+      "optimized_p95_ms": 270.0
+    },
+    "region_mx_vs_us_east_1": {
+      "t3.small": 0.04807692307692313,
+      "t3.medium": 0.050480769230769384,
+      "t4g.small": 0.04761904761904767,
+      "t4g.medium": 0.05059523809523814,
+      "c7g.medium": 0.04958677685950419
+    }
+  }
+}
