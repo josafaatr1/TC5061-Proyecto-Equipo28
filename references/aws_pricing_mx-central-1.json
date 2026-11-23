@@ -1,0 +1,41 @@
+{
+  "description": "Precios on-demand de referencia de AWS (Linux, USD por hora) para el análisis FinOps de la API MiBici.",
+  "currency": "USD",
+  "region": "mx-central-1",
+  "region_name": "Mexico (Central)",
+  "retrieved_at": "2026-11-22",
+  "hours_per_month": 730,
+  "sources": {
+    "ec2": {
+      "url": "https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/ec2-ondemand-without-sec-sel/Mexico%20(Central)/Linux/index.json",
+      "publication_date": "2026-11-21T00:48:16Z",
+      "notes": "Archivo de precios que consume la página oficial https://aws.amazon.com/ec2/pricing/on-demand/."
+    },
+    "fargate": {
+      "url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/mx-central-1/index.json",
+      "publication_date": "2026-11-11T23:46:23Z",
+      "notes": "AWS Price List API (oferta AmazonECS). Fargate cobra por segundo con mínimo de un minuto."
+    }
+  },
+  "ec2": {
+    "t3.small": {"vcpu": 2, "memory_gib": 2, "arch": "x86_64", "usd_per_hour": 0.0218, "burstable": true},
+    "t3.medium": {"vcpu": 2, "memory_gib": 4, "arch": "x86_64", "usd_per_hour": 0.0437, "burstable": true},
+    "t4g.small": {"vcpu": 2, "memory_gib": 2, "arch": "arm64", "usd_per_hour": 0.0176, "burstable": true},
+    "t4g.medium": {"vcpu": 2, "memory_gib": 4, "arch": "arm64", "usd_per_hour": 0.0353, "burstable": true},
+    "c7g.medium": {"vcpu": 1, "memory_gib": 2, "arch": "arm64", "usd_per_hour": 0.0381, "burstable": false}
+  },
+  "fargate": {
+    "x86_64": {"usd_per_vcpu_hour": 0.042504, "usd_per_gb_hour": 0.00466725},
+    "arm64": {"usd_per_vcpu_hour": 0.033999, "usd_per_gb_hour": 0.003738}
+  },
+  "us_east_1_comparison": {
+    "notes": "Mismos tipos en US East (N. Virginia), misma fuente y fecha, para comparar regiones.",
+    "ec2_usd_per_hour": {
+      "t3.small": 0.0208,
+      "t3.medium": 0.0416,
+      "t4g.small": 0.0168,
+      "t4g.medium": 0.0336,
+      "c7g.medium": 0.0363
+    }
+  }
+}

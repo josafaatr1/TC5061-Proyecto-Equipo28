@@ -484,6 +484,56 @@ def plot_memory(data: list[dict]) -> None:
 
 
 # ---------------------------------------------------------------------
+# Figure 5: Error rate
+# ---------------------------------------------------------------------
+
+def plot_error_rate(data: list[dict]) -> None:
+
+    users = [str(row["users"]) for row in data]
+
+    rates = [row["failure_rate_percent"] for row in data]
+
+    plt.figure(figsize=(10, 6))
+
+    bars = plt.bar(
+        users,
+        rates,
+        width=0.6,
+        color="tab:red",
+    )
+
+    for bar, row in zip(bars, data):
+
+        plt.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height(),
+            f"{row['failure_rate_percent']:.2f}%\n"
+            f"({row['failures']} of {row['requests']})",
+            ha="center",
+            va="bottom",
+        )
+
+    plt.title(
+        "MiBici API - Error Rate",
+        fontsize=14,
+        fontweight="bold",
+    )
+
+    plt.xlabel("Concurrent users")
+    plt.ylabel("Failed requests (%)")
+
+    # Keep a visible scale when every scenario has 0% errors.
+    plt.ylim(0, max(5, max(rates) * 1.3))
+
+    plt.grid(
+        axis="y",
+        alpha=0.3,
+    )
+
+    save_graph("05_error_rate.png")
+
+
+# ---------------------------------------------------------------------
 # Consolidated benchmark report
 # ---------------------------------------------------------------------
 
@@ -590,6 +640,7 @@ def main():
     plot_throughput(data)
     plot_cpu(data)
     plot_memory(data)
+    plot_error_rate(data)
 
     export_summary(data)
 
