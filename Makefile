@@ -7,8 +7,10 @@ PYTHON_VERSION = 3.14
 PYTHON_INTERPRETER = python
 export MLFLOW_EXPERIMENT_NAME ?= mibici-equipo28
 QUESTION ?= p1
-CONTAINER_ENGINE ?= podman
+CONTAINER_ENGINE ?= docker
 IMAGE_NAME ?= mibici-api
+CAPACITY_DIR ?= tests/load/results/capacity
+CAPACITY_NAME ?= capacity_run
 # Podman guarda por defecto en formato OCI, que descarta HEALTHCHECK; Docker no acepta --format.
 BUILD_FLAGS ?= $(if $(filter podman,$(CONTAINER_ENGINE)),--format docker,)
 
@@ -133,6 +135,40 @@ image:
 .PHONY: container-run
 container-run:
 	$(CONTAINER_ENGINE) run --rm -p 8000:8000 --name $(IMAGE_NAME) $(IMAGE_NAME)
+
+
+## Start the API and MLflow with Docker Compose and wait until both are healthy
+.PHONY: compose-up
+compose-up:
+	docker compose up -d --build --wait --wait-timeout 300
+
+
+## Stop the Compose services (keeps the MLflow volume)
+.PHONY: compose-down
+compose-down:
+	docker compose down
+
+
+## Capacity test with Locust against the Compose API, monitoring API and MLflow
+.PHONY: capacity-test
+capacity-test:
+	mkdir -p $(CAPACITY_DIR)
+	$(PYTHON_INTERPRETER) tests/load/monitor_resources.py \
+		--container $$(docker compose ps -q api) \
+		--output $(CAPACITY_DIR)/$(CAPACITY_NAME)_api_resources.csv & api=$$!; \
+	$(PYTHON_INTERPRETER) tests/load/monitor_resources.py \
+		--container $$(docker compose ps -q mlflow) \
+		--output $(CAPACITY_DIR)/$(CAPACITY_NAME)_mlflow_resources.csv & mlflow=$$!; \
+	sleep 3; \
+	locust -f tests/load/locustfile_capacity.py --headless --host http://127.0.0.1:8000 \
+		--csv $(CAPACITY_DIR)/$(CAPACITY_NAME) --csv-full-history --only-summary; \
+	status=$$?; sleep 2; kill -TERM $$api $$mlflow; wait $$api $$mlflow; exit $$status
+
+
+## Estimate the cost per inference and write reports/finops/
+.PHONY: finops
+finops:
+	$(PYTHON_INTERPRETER) -m mibici.finops
 
 
 # Pendiente: descomentar junto con su entry point en MLproject.
