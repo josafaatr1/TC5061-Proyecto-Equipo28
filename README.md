@@ -562,6 +562,8 @@ Cliente HTTP -> FastAPI -> modelos P2 cargados al iniciar -> JSON
 
 Los modelos se exportan una vez y se empaquetan en la imagen. El contenedor no necesita contactar MLflow durante la inferencia. Un cambio del alias requiere volver a exportar, construir y desplegar; no actualiza contenedores existentes.
 
+Con los modelos ya exportados, `docker compose up -d --build` inicia API y MLflow juntos. Arquitectura, operaciones PowerShell, persistencia y pruebas: [guía de Docker Compose](docs/compose_operations.md).
+
 La inferencia por solicitud permite consultar una estación-hora sin esperar un proceso por lotes. La construcción de variables históricas sigue siendo responsabilidad del consumidor; para consultas masivas puede resultar más apropiado un proceso batch. No se han medido latencia ni capacidad de producción.
 
 | Objetivo | URI de origen | Carpeta exportada | Versión local verificada |
