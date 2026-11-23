@@ -10,11 +10,26 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      # Procesos de uvicorn. Con más de uno, OMP_NUM_THREADS=1 evita que cada proceso
+      # abra un hilo de OpenMP por núcleo del host y compitan por los vCPU asignados
+      # (prueba de capacidad: 2 workers con 2 vCPU sostienen ~95 req/s contra ~27 req/s
+      # de un solo proceso). Ver tests/load/README.md.
+      WEB_CONCURRENCY: "${API_WORKERS:-1}"
+      OMP_NUM_THREADS: "1"
     depends_on:
       mlflow:
         condition: service_healthy
     networks:
       - mibici
+    # Límites del contenedor: con los valores por defecto ambos servicios caben en una
+    # instancia de referencia de 2 vCPU y 4 GiB (análisis FinOps en reports/finops/).
+    # Se ajustan con variables de entorno, por ejemplo:
+    #   API_CPUS=2 API_MEMORY=1G API_WORKERS=2 docker compose up -d
+    deploy:
+      resources:
+        limits:
+          cpus: "${API_CPUS:-1.0}"
+          memory: "${API_MEMORY:-512M}"
     restart: unless-stopped
     cap_drop:
       - ALL
@@ -60,6 +75,11 @@ services:
       timeout: 5s
       start_period: 60s
       retries: 12
+    deploy:
+      resources:
+        limits:
+          cpus: "${MLFLOW_CPUS:-1.0}"
+          memory: "${MLFLOW_MEMORY:-2560M}"
     restart: unless-stopped
     cap_drop:
       - ALL
