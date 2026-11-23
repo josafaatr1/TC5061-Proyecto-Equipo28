@@ -1,9 +1,13 @@
 # TC5061-Proyecto-Equipo28
 
+[![CI - MiBici](https://github.com/josafaatr1/TC5061-Proyecto-Equipo28/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/josafaatr1/TC5061-Proyecto-Equipo28/actions/workflows/ci.yml)
+
 **Proyecto MiBici: propuesta y base reproducible**
 
 Tecnológico de Monterrey | TC5061 — MLOps  
 Equipo 28
+
+> **Inicio rápido (Entregable 7).** Con los modelos P2 exportados (sección 14.2), `docker compose up -d --build --wait` levanta la API y MLflow con un solo comando. Pipeline de CI/CD, pruebas de carga y análisis FinOps: [sección 16](#16-operación-del-sistema-entregable-7).
 
 ## 1. Descripción del proyecto
 
@@ -70,13 +74,16 @@ Asimismo, las horas sin viajes no garantizan que una estación estuviera operati
 
 ```text
 TC5061-Proyecto-Equipo28/
+├── .github/workflows/
+│   └── ci.yml            # Pipeline de CI/CD: pruebas, Ruff y construcción de la imagen
 ├── data/                 # Datos originales, intermedios y procesados
-├── docs/                 # Reporte de la segunda entrega (resultados, selección y evidencias)
+├── docs/                 # Reportes de entregas, guía de Docker Compose y evidencias
 ├── mibici/               # Código fuente del proyecto
 │   ├── clustering.py     # Agrupamiento de estaciones (P3)
 │   ├── config.py         # Configuración centralizada
 │   ├── dataset.py        # Ingesta y preparación de datos
 │   ├── features.py       # Ingeniería de características
+│   ├── finops.py         # Costo por inferencia con capacidad medida y precios de AWS
 │   ├── tracking.py       # Registro del pipeline de datos en MLflow
 │   ├── validation.py     # Integridad y drift de P1/P2 con Deepchecks
 │   ├── workflow.py       # Encadena los entry points bajo un run padre
@@ -85,20 +92,28 @@ TC5061-Proyecto-Equipo28/
 │   └── modeling/         # Modelos P1 y P2, runs de MLflow, búsqueda y Model Registry
 ├── models/               # Modelos generados localmente
 ├── notebooks/            # Exploración de datos
-├── references/           # Manifiestos de datos, handoff P1/P2 y auditoría del catálogo
+├── references/           # Manifiestos de datos, handoff P1/P2, auditoría del catálogo y precios de AWS
 ├── reports/
-│   └── figures/          # Figuras y visualizaciones
+│   ├── figures/          # Figuras y visualizaciones
+│   └── finops/           # Análisis FinOps generado (reporte, resumen JSON y gráficas)
 ├── tests/                # Pruebas (misma estructura que mibici/)
 │   ├── conftest.py       # Fixtures compartidas (tracking store temporal de MLflow)
 │   ├── factories.py      # Datos sintéticos reutilizados por varias pruebas
-│   ├── test_*.py         # Pruebas de mibici/*.py (dataset, features, clustering, tracking, validation)
-│   └── modeling/         # Pruebas de mibici/modeling/*.py
+│   ├── test_*.py         # Pruebas de mibici/*.py (dataset, features, clustering, finops, ...)
+│   ├── api/              # Pruebas de la API REST
+│   ├── load/             # Pruebas de carga y capacidad con Locust, monitoreo y resultados
+│   ├── modeling/         # Pruebas de mibici/modeling/*.py
+│   └── monitoring/       # Pruebas de mibici/monitoring/*.py
 ├── .gitignore            # Exclusiones de Git
-├── Makefile              # Atajos para los entry points de MLflow
+├── Containerfile         # Imagen de la API (compatible con Docker y Podman)
+├── docker-compose.yml    # Orquestación de la API y MLflow con límites de recursos
+├── Makefile              # Atajos para MLflow, imagen, Compose, prueba de capacidad y FinOps
 ├── MLproject             # Entry points de MLflow Projects
 ├── pyproject.toml        # Configuración del paquete
 ├── python_env.yaml       # Entorno de MLflow Projects
 ├── requirements.txt      # Dependencias directas
+├── requirements-api.txt  # Dependencias de la imagen de la API
+├── requirements-load.txt # Dependencias de las pruebas de carga (Locust)
 └── requirements-lock.txt # Versiones del entorno
 ```
 
@@ -411,8 +426,13 @@ tests/
 ├── test_clustering.py    # mibici/clustering.py
 ├── test_dataset.py       # mibici/dataset.py
 ├── test_features.py      # mibici/features.py
+├── test_finops.py        # mibici/finops.py
+├── test_monitor_resources.py  # tests/load/monitor_resources.py (Docker y Podman)
 ├── test_tracking.py      # mibici/tracking.py
 ├── test_validation.py    # mibici/validation.py
+├── api/
+│   └── test_main.py          # mibici/api/main.py
+├── load/                     # Escenarios de Locust (no son pruebas de pytest; sección 16.4)
 ├── monitoring/
 │   └── test_drift_report.py  # mibici/monitoring/drift_report.py
 └── modeling/
@@ -507,11 +527,15 @@ chore: initialize MiBici project structure
 | Miguel Ángel Lara López | Análisis exploratorio y clustering de estaciones (P3) y pruebas unitarias con PyTest|
 | Josafat Misael Rodríguez Nieto | Ingeniería de datos, ingesta, validación, procesamiento y arquitectura de datos. |
 
+Las aportaciones de cada integrante al Entregable 7 (Compose, CI/CD, pruebas de carga y FinOps) están en la [sección 16](#16-operación-del-sistema-entregable-7).
+
 ## 11. Documentación
 
 Los documentos de formulación del problema y diseño de datos están en `references/`. El reporte de la segunda entrega (resultados, selección del mejor modelo, reproducción y evidencias) está en [docs/entrega2_mlflow.md](docs/entrega2_mlflow.md).
 
 El despliegue REST se describe en la sección 14; la auditoría y los resultados de integración están en [docs/api_validation.md](docs/api_validation.md). La integración histórica de inferencia P1 se conserva en [docs/mlflow_model_serving.md](docs/mlflow_model_serving.md).
+
+La operación del sistema (Entregable 7) se describe en la sección 16, con tres documentos de detalle: la [guía de Docker Compose](docs/compose_operations.md), las [pruebas de carga y capacidad](tests/load/README.md) y el [análisis FinOps](reports/finops/finops_report.md).
 
 
 ## 12. Estado del proyecto
@@ -526,7 +550,11 @@ El despliegue REST se describe en la sección 14; la auditoría y los resultados
 
 **MLOps:** Los entry points de MLflow Projects (`ingest`, `train`, `search`, `register`, entre otros) se ejecutan contra un servidor con SQLite. Los modelos mejores de P1, P2 (uno por objetivo) y P3 están en el Model Registry con el alias `champion`.
 
-**Documentación:** Fuentes de datos, pipeline, resultados de la búsqueda, selección del mejor modelo y evidencias en [docs/entrega2_mlflow.md](docs/entrega2_mlflow.md). Pendiente integrar la arquitectura.
+**Despliegue y monitoreo:** API REST P2 en contenedor (sección 14) y reportes de drift y calidad con Evidently (sección 15).
+
+**Operación:** Docker Compose levanta la API y MLflow con un solo comando y límites de recursos; GitHub Actions ejecuta pruebas, Ruff y la construcción de la imagen en cada push y pull request; Locust mide desempeño y capacidad, y el análisis FinOps estima el costo por inferencia con precios de AWS (sección 16).
+
+**Documentación:** Fuentes de datos, pipeline, resultados de la búsqueda, selección del mejor modelo y evidencias en [docs/entrega2_mlflow.md](docs/entrega2_mlflow.md); arquitectura de operación en la sección 16.
 
 ## 13. Auditoría de seguridad
 
@@ -562,9 +590,9 @@ Cliente HTTP -> FastAPI -> modelos P2 cargados al iniciar -> JSON
 
 Los modelos se exportan una vez y se empaquetan en la imagen. El contenedor no necesita contactar MLflow durante la inferencia. Un cambio del alias requiere volver a exportar, construir y desplegar; no actualiza contenedores existentes.
 
-Con los modelos ya exportados, `docker compose up -d --build` inicia API y MLflow juntos. Arquitectura, operaciones PowerShell, persistencia y pruebas: [guía de Docker Compose](docs/compose_operations.md).
+Con los modelos ya exportados, `docker compose up -d --build --wait` inicia API y MLflow juntos (sección 16.2). Arquitectura, operaciones PowerShell, persistencia y pruebas: [guía de Docker Compose](docs/compose_operations.md).
 
-La inferencia por solicitud permite consultar una estación-hora sin esperar un proceso por lotes. La construcción de variables históricas sigue siendo responsabilidad del consumidor; para consultas masivas puede resultar más apropiado un proceso batch. No se han medido latencia ni capacidad de producción.
+La inferencia por solicitud permite consultar una estación-hora sin esperar un proceso por lotes. La construcción de variables históricas sigue siendo responsabilidad del consumidor; para consultas masivas puede resultar más apropiado un proceso batch. La latencia y la capacidad se midieron localmente con Locust (sección 16.4); no son mediciones de un entorno de producción.
 
 | Objetivo | URI de origen | Carpeta exportada | Versión local verificada |
 |---|---|---|---|
@@ -610,35 +638,33 @@ Comprobar que existen `models/metadata.json`, `models/p2-bike-pressure/MLmodel`,
 
 ### 14.3. Construcción y ejecución
 
-Con Podman:
+Docker es el motor principal del proyecto: lo usan el pipeline de CI, Docker Compose y las pruebas de carga.
 
 ```bash
 make image
 make container-run
 ```
 
-Equivalentes explícitos, con el puerto limitado a localhost:
-
-```bash
-podman build --format docker -t mibici-api -f Containerfile .
-podman run --rm -p 127.0.0.1:8000:8000 --name mibici-api mibici-api
-```
-
-`--format docker` conserva el `HEALTHCHECK` en Podman. El target `container-run` original publica `8000:8000` en todas las interfaces; los comandos explícitos de esta sección limitan la exposición local.
-
-Alternativa Docker, verificada en esta entrega:
-
-```bash
-make image CONTAINER_ENGINE=docker
-make container-run CONTAINER_ENGINE=docker
-```
-
-Sin Make:
+Sin Make, con el puerto limitado a localhost:
 
 ```bash
 docker build -t mibici-api -f Containerfile .
 docker run --rm -p 127.0.0.1:8000:8000 --name mibici-api mibici-api
 ```
+
+El target `container-run` publica `8000:8000` en todas las interfaces; los comandos explícitos limitan la exposición local.
+
+Alternativa con Podman:
+
+```bash
+make image CONTAINER_ENGINE=podman
+make container-run CONTAINER_ENGINE=podman
+# Sin Make:
+podman build --format docker -t mibici-api -f Containerfile .
+podman run --rm -p 127.0.0.1:8000:8000 --name mibici-api mibici-api
+```
+
+`--format docker` conserva el `HEALTHCHECK` en Podman; el Makefile lo agrega automáticamente con `CONTAINER_ENGINE=podman`.
 
 La ejecución queda en primer plano; realizar las consultas desde otra terminal. Para segundo plano añadir `-d`. Detener con `podman stop mibici-api` o `docker stop mibici-api`, según el motor utilizado.
 
@@ -810,3 +836,207 @@ Los HTML se abren directamente en el navegador. Las pruebas del módulo están e
 La conclusión y las recomendaciones (reentrenar incluyendo meses recientes y revisar el umbral de decisión) están en [docs/drift_interpretation.md](docs/drift_interpretation.md).
 
 La comparación retrospectiva entre el champion y otra variante HGB, sus limitaciones y los comandos reproducibles están en [docs/ab_testing_summary.md](docs/ab_testing_summary.md). Los insumos y su estado frente a la rúbrica están en [docs/deliverable8_audit_summary.md](docs/deliverable8_audit_summary.md).
+
+## 16. Operación del sistema (Entregable 7)
+
+La API contenerizada (sección 14) y los modelos registrados en MLflow (sección 7) se integran en un sistema que se levanta con un solo comando, se prueba y construye automáticamente en cada cambio, y se analiza bajo carga y desde la perspectiva de costo.
+
+| Componente | Archivos | Integrante | Pull Request |
+|---|---|---|---|
+| Orquestación con Docker Compose | `docker-compose.yml`, [docs/compose_operations.md](docs/compose_operations.md) | Anthony Gerardo Gutarra Sánchez | #31 |
+| Pipeline de CI/CD | `.github/workflows/ci.yml` | Miguel Ángel Lara López | #29 |
+| Pruebas de carga y monitoreo de recursos | `tests/load/`, `requirements-load.txt` | Josafat Misael Rodríguez Nieto | #30 |
+| Prueba de capacidad, límites de recursos, análisis FinOps e integración del README | `mibici/finops.py`, `tests/load/locustfile_capacity.py`, `reports/finops/`, `docker-compose.yml` (límites) | Iván Fernando García Nuñez | `feature/finops-integracion` |
+
+### 16.1. Arquitectura
+
+```text
+docker compose up -d --build --wait
+│
+├── api     FastAPI + modelos P2 empaquetados en la imagen   127.0.0.1:8000   1 vCPU, 512 MiB
+│           (healthcheck /health; arranca cuando mlflow está saludable)
+│
+└── mlflow  servidor de tracking y artefactos (SQLite)       127.0.0.1:5000   1 vCPU, 2.5 GiB
+            └── volumen mibici-compose_mlflow-data (base de datos y artefactos persistentes)
+
+red bridge "mibici": la API resuelve http://mlflow:5000 por nombre
+```
+
+La API recibe `MLFLOW_TRACKING_URI`, pero **la inferencia no consulta MLflow**: los modelos se exportan del Registry y se empaquetan en la imagen (sección 14.2). Si MLflow se detiene, `/predict` sigue respondiendo. Ambos servicios eliminan todas las capabilities, usan `no-new-privileges`, publican sus puertos solo en `127.0.0.1` y limitan sus logs.
+
+Los límites de recursos permiten que ambos servicios quepan en una instancia de 2 vCPU y 4 GiB, la referencia del análisis FinOps. MLflow usa entre 1.2 y 1.7 GiB en reposo, según la ejecución, y llegó a 1.8 GiB durante las pruebas; por eso su límite es de 2.5 GiB.
+
+### 16.2. Levantar el sistema con un solo comando
+
+Requisitos: Docker Engine o Docker Desktop con Docker Compose v2 y los modelos P2 exportados en `models/` (sección 14.2; el clon de Git no los incluye).
+
+```bash
+docker compose up -d --build --wait     # o: make compose-up
+```
+
+`--wait` regresa cuando ambos servicios están saludables. Verificación:
+
+```bash
+docker compose ps
+curl -sS http://127.0.0.1:8000/health
+curl -sS -H "Content-Type: application/json" --data-binary "@docs/examples/p2-request.json" http://127.0.0.1:8000/predict
+curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5000/
+docker compose stats --no-stream
+```
+
+Respuesta esperada de `/health`: `{"status":"healthy","models_loaded":["bike","dock"]}`. La interfaz de MLflow queda en http://127.0.0.1:5000 y la documentación de la API en http://127.0.0.1:8000/docs. Los comandos equivalentes en PowerShell están en la [guía de Docker Compose](docs/compose_operations.md).
+
+Para detener el sistema:
+
+```bash
+docker compose down                     # o: make compose-down
+```
+
+`down` conserva el volumen de MLflow. No usar `docker compose down -v`, porque borra la base de datos y los artefactos.
+
+Los límites y los procesos de la API se ajustan con variables de entorno, sin editar el archivo:
+
+| Variable | Valor por defecto | Uso |
+|---|---|---|
+| `API_CPUS` | `1.0` | vCPU de la API |
+| `API_MEMORY` | `512M` | Memoria de la API |
+| `API_WORKERS` | `1` | Procesos de uvicorn (`WEB_CONCURRENCY`) |
+| `MLFLOW_CPUS` | `1.0` | vCPU de MLflow |
+| `MLFLOW_MEMORY` | `2560M` | Memoria de MLflow |
+
+Por ejemplo, la configuración con más capacidad medida (sección 16.4):
+
+```bash
+API_CPUS=2 API_MEMORY=1G API_WORKERS=2 docker compose up -d --wait api
+```
+
+`OMP_NUM_THREADS=1` está fijo en la API: con más de un proceso evita que cada uno abra un hilo de OpenMP por núcleo del host.
+
+Se validó con Docker Compose v5.1.3 sobre Docker 29.4.1. El archivo sigue la especificación de Compose, así que `podman compose` es la alternativa con Podman, aunque no se validó en esta entrega.
+
+### 16.3. Pipeline de CI/CD
+
+El workflow [.github/workflows/ci.yml](.github/workflows/ci.yml) se ejecuta en cada push a `main` o a ramas `feature/**` y en cada pull request hacia `main`. Un solo job en `ubuntu-latest`:
+
+| Paso | Qué hace |
+|---|---|
+| Checkout y Python 3.14 | Descarga el código e instala Python con caché de pip ligada a `requirements.txt` |
+| Dependencias | `pip install -r requirements.txt` |
+| Pruebas | `python -m pytest -q` (toda la suite de `tests/`) |
+| Formato | `ruff format --check` |
+| Lint | `ruff check` |
+| Imagen | `docker build -t mibici-api -f Containerfile .` |
+
+El estado se ve en el badge del inicio de este README, en la pestaña **Actions** del repositorio y en los *checks* de cada pull request. Con la CLI de GitHub:
+
+```bash
+gh run list --workflow ci.yml --limit 5
+gh run watch                            # sigue la ejecución en curso
+```
+
+Para reproducir el pipeline localmente antes de hacer push, con el entorno de la sección 6:
+
+```bash
+python -m pytest -q
+ruff format --check && ruff check       # o: make lint
+docker build -t mibici-api -f Containerfile .
+```
+
+Alcance: Ruff revisa `mibici/` (configuración en `pyproject.toml`). La imagen se construye sin modelos, porque `models/` solo contiene `.gitkeep` en Git: el paso valida el Containerfile y las dependencias de la API, no la inferencia. La inferencia real se valida localmente con Compose (sección 16.2).
+
+### 16.4. Pruebas de carga y monitoreo de recursos
+
+Instalar las dependencias de carga en el entorno de desarrollo:
+
+```bash
+python -m pip install -r requirements-load.txt
+```
+
+Hay dos tipos de prueba, ambas sobre `POST /predict` con validación del contenido de la respuesta:
+
+| Prueba | Archivo | Usuarios | Propósito |
+|---|---|---|---|
+| Escenarios de uso | `tests/load/locustfile.py` | 1, 5, 10 y 20, con 1-2 s de espera entre peticiones | Desempeño con un patrón de uso parecido al de una app |
+| Capacidad | `tests/load/locustfile_capacity.py` | Escalones de 1 a 32, sin espera | Capacidad máxima sostenible, insumo del análisis FinOps |
+
+Ejemplo de un escenario de uso, con la API levantada y el monitoreo en otra terminal:
+
+```bash
+python tests/load/monitor_resources.py --container "$(docker compose ps -q api)" \
+  --output tests/load/results/<prefijo>_resources.csv
+locust -f tests/load/locustfile.py --headless --host http://127.0.0.1:8000 \
+  -u 20 -r 20 -t 60s --csv tests/load/results/<prefijo> --only-summary
+python tests/load/plot_results.py       # gráficas de latencia, throughput, CPU, memoria y errores
+```
+
+Prueba de capacidad, que también monitorea la API y MLflow:
+
+```bash
+make capacity-test CAPACITY_NAME=<prefijo>
+```
+
+Con Podman, el monitor se ejecuta con `--engine podman`. Todos los comandos, la metodología y la interpretación completa están en [tests/load/README.md](tests/load/README.md).
+
+**Escenarios de uso (sin límites de recursos, PR #30):**
+
+| Usuarios | Peticiones | Errores | Throughput | Latencia promedio | p95 | CPU promedio |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 39 | 0 | 0.67 req/s | 12.7 ms | 18 ms | 5.8 % |
+| 5 | 199 | 0 | 3.39 req/s | 24.5 ms | 76 ms | 25.5 % |
+| 10 | 382 | 0 | 6.48 req/s | 48.0 ms | 91 ms | 52.7 % |
+| 20 | 747 | 0 | 12.67 req/s | 89.7 ms | 130 ms | 114.7 % |
+
+El throughput crece en proporción a los usuarios porque lo limita su tiempo de espera, no la API. La latencia sí aumenta con la concurrencia y la memoria se mantiene estable (~215 MiB).
+
+| Latencia | Throughput | Tasa de error |
+|---|---|---|
+| ![Latencia](tests/load/results/graphs/01_response_latency.png) | ![Throughput](tests/load/results/graphs/02_throughput.png) | ![Tasa de error](tests/load/results/graphs/05_error_rate.png) |
+
+**Prueba de capacidad (con los límites de Compose):**
+
+| Configuración de la API | Capacidad sostenible (p95 ≤ 300 ms) | Con 16 usuarios |
+|---|---|---|
+| 1 vCPU, 1 proceso (por defecto) | 71.4 req/s con 1 usuario | 26.5 req/s, p95 920 ms |
+| 2 vCPU, 1 proceso | 66.6 req/s con 1 usuario | 31.2 req/s, p95 555 ms |
+| 2 vCPU, 2 procesos, `OMP_NUM_THREADS=1` | 95.1 req/s con 16 usuarios | 95.1 req/s, p95 270 ms |
+
+Con un solo proceso, el throughput **baja** al aumentar la concurrencia, porque los hilos compiten por el GIL de Python, y duplicar la CPU no lo corrige. Dos procesos con un hilo de OpenMP cada uno multiplican por 3.6 la capacidad con concurrencia. Ninguna prueba registró errores. MLflow ocupó ~1.8 GiB de memoria con menos del 3 % de CPU.
+
+### 16.5. Análisis FinOps
+
+[mibici/finops.py](mibici/finops.py) combina la capacidad medida, los precios on-demand oficiales de AWS en la región México (Central) ([references/aws_pricing_mx-central-1.json](references/aws_pricing_mx-central-1.json), con fuentes y fechas) y la demanda real de MiBici en 2025. Requiere `data/processed/station_hourly_2025.parquet` (sección 8):
+
+```bash
+make finops                             # o: python -m mibici.finops
+```
+
+Escribe en `reports/finops/` el [reporte completo](reports/finops/finops_report.md), `finops_summary.json` y dos gráficas. Sus funciones tienen pruebas en `tests/test_finops.py`.
+
+**Costo por inferencia de cada opción de despliegue:**
+
+| Opción | USD/mes | Capacidad | USD por millón de inferencias (al 70 % de capacidad) |
+|---|---:|---:|---:|
+| Compose actual: API + MLflow en t3.medium | $31.90 | 71.4 req/s | $0.243 |
+| API sola optimizada en t3.small | $15.91 | 95.1 req/s | $0.091 |
+| API sola optimizada en t4g.small (Graviton) | $12.85 | 95.1 req/s | $0.073 |
+| t4g.small apagada de 1:00 a 5:00 | $10.71 | 95.1 req/s | $0.073 |
+| Fargate 1 vCPU / 2 GB siempre encendido | $37.84 | 71.4 req/s | $0.288 |
+
+![Costo por opción de despliegue](reports/finops/cost_by_deployment_option.png)
+
+**Con la demanda real el costo lo domina la capacidad ociosa.** Una app con 3 consultas por viaje generaría ~1.13 millones de inferencias al mes, con un pico de 1.5 req/s. Una sola instancia basta y opera al 0.5 % de su capacidad, así que cada millón de inferencias cuesta ~$9.48 en la opción más barata, unas 184 veces su costo a plena capacidad. Por eso las optimizaciones con más impacto reducen horas encendidas y tamaño de instancia:
+
+| Optimización | Ahorro | Justificación con datos |
+|---|---:|---|
+| Separar MLflow de la API | 50.1 % | MLflow ocupa ~1.8 GiB y no participa en la inferencia; la API sola cabe en 2 GiB (t3.medium → t3.small) |
+| Graviton (ARM) | 19.3 % | t4g.small cuesta menos que t3.small con los mismos 2 vCPU y 2 GiB; requiere construir y validar la imagen arm64 |
+| Apagar en horas sin servicio | 16.7 % | MiBici no registra viajes de 1:00 a 5:00 |
+| Las tres combinadas | 66.4 % | De $31.90 a $10.71 al mes |
+| Lote horario en Fargate efímero | 98.6 % frente a Fargate siempre encendido | Las 371 predicciones de cada hora tardan ~35 s; se cobran 60 s por corrida: $0.53 al mes |
+| 2 procesos con `OMP_NUM_THREADS=1` | 3.6 veces más capacidad con concurrencia | Pospone la necesidad de réplicas cuando la demanda crezca |
+
+Supuestos y limitaciones: las capacidades se midieron en una laptop (Docker Desktop, AMD Ryzen 7 3700U), no en AWS. t3 y t4g son instancias burstable: sostienen el 20 % de cada vCPU sin consumir créditos, suficiente para la utilización real (< 10 %) pero no para operar a plena capacidad. La región México (Central) cuesta ~5 % más que US East (N. Virginia), a cambio de menor latencia para usuarios de Guadalajara. No se incluyen transferencia de datos, almacenamiento ni balanceador de carga.
+
+### 16.6. Reporte
+
+El reporte en PDF del Entregable 7, `TC5061_Operacion_FinOps_Equipo28.pdf`, con las gráficas de Locust y el análisis FinOps, se entrega en Canvas.

@@ -145,7 +145,7 @@ A partir de estos resultados, se identifican las siguientes oportunidades de opt
 - Comparar el consumo de recursos respecto al throughput obtenido al evaluar distintas configuraciones de despliegue.
 - Estimar los costos de infraestructura utilizando precios reales del proveedor de nube o alojamiento una vez definido el entorno de producción.
 
-Es importante distinguir entre consumo de recursos y costo monetario de operación. Los experimentos midieron la utilización local de CPU y memoria, pero no calcularon el gasto real de infraestructura en la nube.
+Es importante distinguir entre consumo de recursos y costo monetario de operación. Los experimentos de esta sección midieron la utilización local de CPU y memoria; el costo por inferencia con precios reales de AWS se calcula en el [análisis FinOps](../../reports/finops/finops_report.md), a partir de la prueba de capacidad de la sección 10.
 
 ## 7. Limitaciones del experimento
 
@@ -156,7 +156,7 @@ Los resultados deben interpretarse considerando las características del entorno
 - Cada escenario tuvo una duración aproximada de 60 segundos.
 - Se utilizó una sola configuración del contenedor y una misma versión de los modelos exportados.
 - No se evaluaron condiciones de red de producción ni generación distribuida de carga.
-- No se estableció la capacidad máxima de producción ni el costo monetario de infraestructura.
+- No se estableció la capacidad máxima de producción ni el costo monetario de infraestructura. Ambos se atienden en la sección 10 y en el [análisis FinOps](../../reports/finops/finops_report.md).
 
 La ejecución de pruebas adicionales con periodos más prolongados, múltiples repeticiones y diferentes configuraciones de despliegue permitiría obtener evidencia más robusta para la planificación de capacidad.
 
@@ -246,11 +246,47 @@ python tests/load/monitor_resources.py \
   --output tests/load/results/stress_20users_resources.csv
 ```
 
-El monitoreo debe permanecer activo durante la ejecución de cada prueba de carga y detenerse mediante `Ctrl+C` al finalizar el experimento.
+El monitoreo debe permanecer activo durante la ejecución de cada prueba de carga y detenerse mediante `Ctrl+C` al finalizar el experimento. También se detiene limpiamente con `kill` (SIGTERM), lo que permite automatizarlo desde scripts.
 
 Las mediciones recopiladas se utilizan posteriormente para calcular estadísticas de consumo promedio, mínimo y máximo, considerando únicamente la ventana temporal correspondiente a cada escenario.
 
-### 8.4. Análisis de consumo de recursos
+Con Docker Compose el contenedor no tiene nombre fijo; se pasa su ID:
+
+```bash
+python tests/load/monitor_resources.py \
+  --container "$(docker compose ps -q api)" \
+  --output tests/load/results/<archivo-nuevo>_resources.csv
+```
+
+Con Podman se agrega `--engine podman`. Con `--no-stream`, Podman reporta el CPU promedio desde que arrancó el contenedor y no el del último intervalo, por lo que el script calcula el porcentaje a partir de la diferencia del tiempo de CPU acumulado (`CPUNano`) entre dos muestras consecutivas. Sin ese ajuste, un contenedor que pasó horas inactivo reporta menos del 3 % de CPU aunque esté saturado.
+
+### 8.4. Ejecución de las pruebas con Locust
+
+Con la API disponible en `http://127.0.0.1:8000` y el monitoreo activo en otra terminal, cada escenario se ejecuta en modo *headless* durante 60 segundos. `-u` fija los usuarios concurrentes y `-r` la tasa de incorporación (igual a `-u`, para que todos inicien en el primer segundo). `--csv` genera los archivos `<prefijo>_stats.csv`, `<prefijo>_stats_history.csv`, `<prefijo>_failures.csv` y `<prefijo>_exceptions.csv`:
+
+```bash
+# Baseline
+locust -f tests/load/locustfile.py --headless --host http://127.0.0.1:8000 \
+  -u 1 -r 1 -t 60s --csv tests/load/results/baseline_1user --only-summary
+
+# Moderado
+locust -f tests/load/locustfile.py --headless --host http://127.0.0.1:8000 \
+  -u 5 -r 5 -t 60s --csv tests/load/results/moderate_5users --only-summary
+
+# Alto
+locust -f tests/load/locustfile.py --headless --host http://127.0.0.1:8000 \
+  -u 10 -r 10 -t 60s --csv tests/load/results/high_10users --only-summary
+
+# Estrés
+locust -f tests/load/locustfile.py --headless --host http://127.0.0.1:8000 \
+  -u 20 -r 20 -t 60s --csv tests/load/results/stress_20users --only-summary
+```
+
+Cada usuario espera entre 1 y 2 segundos entre peticiones (`wait_time = between(1, 2)`), como lo haría una persona consultando la app. Por eso el throughput crece casi en proporción a los usuarios: lo limita el tiempo de espera del cliente y no la API. Para medir la capacidad máxima se usa la prueba de capacidad de la sección 10.
+
+Para no sobrescribir la evidencia original, usar prefijos nuevos al repetir los escenarios.
+
+### 8.5. Análisis de consumo de recursos
 
 Una vez recopiladas las estadísticas de Locust y las mediciones del contenedor, se utiliza `analyze_resources.py` para analizar el consumo de infraestructura durante cada escenario.
 
@@ -289,14 +325,27 @@ Para los demás escenarios, se sustituyen los archivos de entrada correspondient
 
 El resultado proporciona estadísticas de consumo promedio, mínimo y máximo para cada escenario, que posteriormente se utilizan en la comparación y visualización del rendimiento de la API.
 
+### 8.6. Generación de gráficas
+
+```bash
+python tests/load/plot_results.py
+```
+
+Lee los CSV de los cuatro escenarios, alinea las muestras de recursos con la ventana de cada prueba y genera en `tests/load/results/graphs/` las gráficas de latencia, throughput, CPU, memoria y tasa de error, además de `benchmark_summary.csv`.
+
+![Tasa de error por escenario](results/graphs/05_error_rate.png)
+
+Ninguna de las 1,367 peticiones de los cuatro escenarios falló (0 % de errores en todos).
+
 ## 9. Estructura de los entregables
 
 Los scripts y evidencias experimentales se organizan de la siguiente manera:
 
 ```text
 tests/load/
-├── locustfile.py
-├── monitor_resources.py
+├── locustfile.py            # Escenarios con usuarios que esperan 1-2 s
+├── locustfile_capacity.py   # Prueba de capacidad: usuarios sin espera, por escalones
+├── monitor_resources.py     # docker/podman stats a CSV
 ├── analyze_resources.py
 ├── plot_results.py
 └── results/
@@ -304,12 +353,66 @@ tests/load/
     ├── moderate_5users_*.csv
     ├── high_10users_*.csv
     ├── stress_20users_*.csv
+    ├── capacity/            # Pruebas de capacidad por configuración (sección 10)
     └── graphs/
         ├── 01_response_latency.png
         ├── 02_throughput.png
         ├── 03_cpu_utilization.png
         ├── 04_memory_utilization.png
+        ├── 05_error_rate.png
         └── benchmark_summary.csv
 ```
 
 Los archivos CSV conservan las mediciones experimentales originales, mientras que las gráficas permiten comparar visualmente el rendimiento de la API y el consumo de recursos bajo diferentes niveles de concurrencia.
+
+## 10. Prueba de capacidad (Entregable 7)
+
+Los escenarios anteriores no saturan la API: el tiempo de espera de los usuarios limita el throughput. Para el análisis FinOps se necesita la capacidad máxima sostenible, así que se agregó `locustfile_capacity.py`. Reutiliza la petición y las validaciones de `locustfile.py`, pero sus usuarios no esperan entre peticiones y la concurrencia sube por escalones de 1, 2, 4, 8, 16 y 32 usuarios, 30 segundos cada uno.
+
+La prueba corre contra la API de Docker Compose, con límites de recursos fijados en `docker-compose.yml`, y monitorea a la vez la API y MLflow:
+
+```bash
+docker compose up -d --build --wait
+make capacity-test CAPACITY_NAME=capacity_run
+```
+
+Sin Make, el mismo procedimiento:
+
+```bash
+python tests/load/monitor_resources.py --container "$(docker compose ps -q api)"   --output tests/load/results/capacity/capacity_run_api_resources.csv &
+python tests/load/monitor_resources.py --container "$(docker compose ps -q mlflow)"   --output tests/load/results/capacity/capacity_run_mlflow_resources.csv &
+locust -f tests/load/locustfile_capacity.py --headless --host http://127.0.0.1:8000   --csv tests/load/results/capacity/capacity_run --csv-full-history --only-summary
+kill %1 %2
+```
+
+`CAPACITY_STEPS` (por ejemplo `1,4,16`) y `CAPACITY_STEP_SECONDS` cambian los escalones. Las configuraciones de la API se cambian con variables de entorno, sin editar archivos:
+
+```bash
+API_CPUS=2 API_MEMORY=1G API_WORKERS=2 docker compose up -d --wait api
+```
+
+### 10.1. Resultados
+
+Cada escalón se resume con la mediana de sus últimos 20 segundos (los primeros 10 aún mezclan el escalón anterior). La capacidad sostenible es el escalón con más peticiones por segundo con p95 de 300 ms o menos y sin errores. Ninguna de las cinco pruebas registró errores.
+
+| Configuración de la API | 1 usuario (req/s, p95) | 16 usuarios (req/s, p95) | 32 usuarios (req/s, p95) | Capacidad sostenible | Memoria API máx. |
+|---|---|---|---|---|---|
+| 1 vCPU, 1 proceso (valores por defecto) | 71.4, 20 ms | 26.5, 920 ms | 25.4, 1,700 ms | 71.4 req/s | 295 MiB |
+| 1 vCPU, 1 proceso, `OMP_NUM_THREADS=1` | 69.9, 20 ms | 26.9, 910 ms | 26.2, 1,700 ms | 69.9 req/s | 196 MiB |
+| 2 vCPU, 1 proceso | 66.6, 18 ms | 31.2, 555 ms | 29.6, 1,100 ms | 66.6 req/s | 201 MiB |
+| 2 vCPU, 2 procesos | 14.8, 72 ms | 46.1, 400 ms | 42.2, 910 ms | 29.6 req/s | 413 MiB |
+| 2 vCPU, 2 procesos, `OMP_NUM_THREADS=1` | 15.2, 71 ms | **95.1, 270 ms** | 91.8, 540 ms | **95.1 req/s** | 410 MiB |
+
+![Capacidad por configuración](../../reports/finops/capacity_by_configuration.png)
+
+### 10.2. Interpretación
+
+- **Con un solo proceso, más concurrencia reduce el throughput.** Con 1 vCPU, la API atiende 71 req/s con un usuario y solo 25 req/s con 32, mientras la latencia p95 pasa de 20 ms a 1.7 s. El endpoint `/predict` es síncrono: FastAPI lo ejecuta en un pool de hasta 40 hilos que compiten por el GIL de Python dentro del mismo proceso.
+- **Duplicar la CPU de un solo proceso no ayuda.** Con 2 vCPU la API consume más CPU (171 % en promedio) pero su throughput con concurrencia apenas cambia. Más núcleos solo sirven con más procesos.
+- **Los procesos necesitan `OMP_NUM_THREADS=1`.** Los modelos son `HistGradientBoostingClassifier`, que usa OpenMP con un hilo por núcleo que *ve* el contenedor (los 8 del host, no los 2 asignados). Con un proceso eso no afecta, pero con dos los hilos compiten por los 2 vCPU y el resultado es errático. Con un hilo por proceso, la API sostiene 95 req/s con 16 usuarios: 3.6 veces más que la configuración por defecto, con p95 de 270 ms contra 920 ms.
+- **Costo de la optimización.** Con un solo usuario la latencia sube de unos 20 ms a unos 70 ms con dos procesos; sigue dentro del SLO.
+- **MLflow consume 1.8 GiB de memoria y menos del 3 % de CPU** durante todas las pruebas: pesa más que la API en memoria sin participar en la inferencia.
+
+Por eso `docker-compose.yml` fija `OMP_NUM_THREADS=1` y expone `API_WORKERS`. Los valores por defecto (1 vCPU, 1 proceso) se conservan para que API y MLflow quepan juntos en una instancia de 2 vCPU y 4 GiB. El costo de cada configuración en AWS está en el [análisis FinOps](../../reports/finops/finops_report.md).
+
+Entorno: Docker Desktop 29.4.1 en Linux, AMD Ryzen 7 3700U (8 hilos), máquina virtual de Docker con 8 vCPU y 7.1 GiB. Las cifras sirven para comparar configuraciones en el mismo equipo; un vCPU de AWS puede rendir distinto.
