@@ -414,20 +414,42 @@ def predict_with(estimator: object, model_input: pd.DataFrame | np.ndarray) -> n
     return estimator.predict(model_input)
 
 
-def log_signed_model(estimator: object, example: pd.DataFrame | np.ndarray, model_name: str):
-    """Registrar el modelo con un ejemplo de entrada y la firma inferida de sus predicciones."""
-    signature = infer_signature(example, predict_with(estimator, example))
+def log_signed_model(
+    estimator: object,
+    example: pd.DataFrame | np.ndarray,
+    model_name: str,
+):
+    """Registrar el modelo con un ejemplo de entrada y la firma inferida."""
+
+    schema_example = example.copy()
+
+    # Normalize integer DataFrame columns for MLflow schema compatibility.
+    if isinstance(schema_example, pd.DataFrame):
+        integer_columns = schema_example.select_dtypes(include=["integer"]).columns
+
+        if len(integer_columns):
+            schema_example[integer_columns] = schema_example[integer_columns].astype("float64")
+
+    signature = infer_signature(
+        schema_example,
+        predict_with(estimator, schema_example),
+    )
+
     if isinstance(estimator, mlflow.pyfunc.PythonModel):
         mlflow.pyfunc.log_model(
-            name="model", python_model=estimator, input_example=example, signature=signature
+            name="model",
+            python_model=estimator,
+            input_example=schema_example,
+            signature=signature,
         )
         return
 
     is_hgb = MODEL_FAMILIES[model_name] == "hist_gradient_boosting"
+
     mlflow.sklearn.log_model(
         estimator,
         name="model",
-        input_example=example,
+        input_example=schema_example,
         signature=signature,
         skops_trusted_types=HGB_TRUSTED_TYPES if is_hgb else None,
     )
@@ -446,27 +468,51 @@ def selection_summary(table: pd.DataFrame, metric: str, higher_is_better: bool) 
     is_baseline = table["stage"] == "baseline"
     baseline = best(table.loc[is_baseline])
     candidate = best(table.loc[~is_baseline])
-    gain = candidate[metric] - baseline[metric]
+
+    baseline_value = float(baseline[metric])
+    candidate_value = float(candidate[metric])
+
+    gain = candidate_value - baseline_value
     if not higher_is_better:
         gain = -gain
+
+    # Percentage improvement is undefined when the baseline is zero.
+    improvement_pct = 100 * gain / abs(baseline_value) if baseline_value != 0 else None
 
     return {
         "metric": metric,
         "higher_is_better": higher_is_better,
-        "best_baseline": {"run_name": baseline["run_name"], "value": float(baseline[metric])},
-        "best_candidate": {"run_name": candidate["run_name"], "value": float(candidate[metric])},
+        "best_baseline": {
+            "run_name": baseline["run_name"],
+            "value": baseline_value,
+        },
+        "best_candidate": {
+            "run_name": candidate["run_name"],
+            "value": candidate_value,
+        },
         "n_candidates": int((~is_baseline).sum()),
         "improvement": float(gain),
-        "improvement_pct": float(100 * gain / abs(baseline[metric])),
+        "improvement_pct": (float(improvement_pct) if improvement_pct is not None else None),
     }
 
 
 def log_selection(summaries: dict[str, dict]) -> None:
     """Guardar en el run padre qué candidato gana frente al mejor baseline."""
     mlflow.log_dict(summaries, "reports/selection_summary.json")
+
     for label, summary in summaries.items():
-        mlflow.set_tag(f"selected_run_{label}", summary["best_candidate"]["run_name"])
-        mlflow.log_metric(f"{label}_improvement_pct", summary["improvement_pct"])
+        mlflow.set_tag(
+            f"selected_run_{label}",
+            summary["best_candidate"]["run_name"],
+        )
+
+        improvement_pct = summary["improvement_pct"]
+
+        if improvement_pct is not None:
+            mlflow.log_metric(
+                f"{label}_improvement_pct",
+                improvement_pct,
+            )
 
 
 def run_p1(
@@ -901,6 +947,10 @@ def run_p3(
             candidates[f"kmeans_k{n_clusters}"] = (kmeans, kmeans.fit_predict(features))
 
     summary = []
+
+    if not os.getenv("MLFLOW_EXPERIMENT_ID"):
+        mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+
     with mlflow.start_run():
         mlflow.set_tags(
             {
@@ -962,15 +1012,35 @@ def run_p3(
                         "evaluation/station_map.png",
                     )
 
+                # Normalize the input example for MLflow schema compatibility.
+                schema_example = features.head(5).copy()
+
+                integer_columns = schema_example.select_dtypes(include=["integer"]).columns
+
+                if len(integer_columns):
+                    schema_example[integer_columns] = schema_example[integer_columns].astype(
+                        "float64"
+                    )
+
+                # Infer the signature using the normalized example.
+                signature = infer_signature(
+                    schema_example,
+                    predict_with(estimator, schema_example),
+                )
+
                 if is_baseline:
                     mlflow.pyfunc.log_model(
-                        name="model", python_model=estimator, input_example=features.head(5)
+                        name="model",
+                        python_model=estimator,
+                        input_example=schema_example,
+                        signature=signature,
                     )
                 else:
                     mlflow.sklearn.log_model(
                         estimator,
                         name="model",
-                        input_example=features.head(5),
+                        input_example=schema_example,
+                        signature=signature,
                         skops_trusted_types=P3_TRUSTED_TYPES,
                     )
 

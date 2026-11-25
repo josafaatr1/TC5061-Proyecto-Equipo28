@@ -9,6 +9,7 @@ métrica del champion actual; si no, la versión queda registrada sin alias.
 """
 
 from dataclasses import dataclass
+import os
 
 from loguru import logger
 import mlflow
@@ -127,6 +128,31 @@ def improves(new_value: float, current_value: float, higher_is_better: bool) -> 
     return new_value > current_value if higher_is_better else new_value < current_value
 
 
+def should_promote(
+    new_value: float,
+    current_value: float,
+    higher_is_better: bool,
+    new_experiment_id: str,
+    champion_experiment_id: str,
+    target_experiment_id: str,
+) -> bool:
+    """Decidir la promoción considerando métricas y procedencia."""
+
+    # Una mejora real de la métrica siempre tiene prioridad.
+    if improves(new_value, current_value, higher_is_better):
+        return True
+
+    # Si la métrica es peor, no promover.
+    if new_value != current_value:
+        return False
+
+    # En caso de empate, preferir el experimento oficial del proyecto.
+    return (
+        new_experiment_id == target_experiment_id
+        and champion_experiment_id != target_experiment_id
+    )
+
+
 def ensure_version(client: mlflow.MlflowClient, spec: RegistrySpec, run: Run):
     """Registrar el modelo del run (o reutilizar su versión si ya existe)."""
     try:
@@ -193,25 +219,43 @@ def register_spec(client: mlflow.MlflowClient, experiment_id: str, spec: Registr
         "model_name": run.data.tags["model_name"],
         spec.metric: new_value,
     }
+
     if champion is not None and champion.version == version.version:
         logger.info(f"{spec.name}: la versión {version.version} ya es {CHAMPION_ALIAS}.")
         return {**summary, "status": "ya es champion"}
 
-    if champion is not None:
+    # First valid registration becomes champion.
+    if champion is None:
+        promote = True
+    else:
         current_value = float(champion.tags["selection_metric_value"])
+        champion_run = client.get_run(champion.run_id)
+
         summary[f"champion_{spec.metric}"] = current_value
-        if not improves(new_value, current_value, spec.higher_is_better):
-            logger.info(
-                f"{spec.name}: v{version.version} ({spec.metric}={new_value:.6f}) no mejora "
-                f"a v{champion.version} ({current_value:.6f}); el champion no cambia."
-            )
-            return {**summary, "status": "registrado sin alias"}
+
+        promote = should_promote(
+            new_value=new_value,
+            current_value=current_value,
+            higher_is_better=spec.higher_is_better,
+            new_experiment_id=run.info.experiment_id,
+            champion_experiment_id=champion_run.info.experiment_id,
+            target_experiment_id=experiment_id,
+        )
+
+    if not promote:
+        logger.info(
+            f"{spec.name}: v{version.version} no se promueve. "
+            f"Champion actual: v{champion.version}."
+        )
+        return {**summary, "status": "registrado sin alias"}
 
     client.set_registered_model_alias(spec.name, CHAMPION_ALIAS, version.version)
+
     logger.success(
-        f"{spec.name}: v{version.version} ({spec.metric}={new_value:.6f}) es el nuevo "
-        f"{CHAMPION_ALIAS}."
+        f"{spec.name}: v{version.version} "
+        f"({spec.metric}={new_value:.6f}) es el nuevo {CHAMPION_ALIAS}."
     )
+
     return {**summary, "status": "nuevo champion"}
 
 
@@ -248,10 +292,16 @@ def register_models(
 @app.command()
 def main(experiment_name: str = MLFLOW_EXPERIMENT_NAME):
     """Registrar en el Model Registry el mejor modelo de cada pregunta."""
-    # Sin argumentos reutiliza el run abierto por `mlflow run` (o crea uno).
+
+    # Preserve the experiment selected by MLflow Projects.
+    # When running directly, use the configured project experiment.
+    if not os.getenv("MLFLOW_EXPERIMENT_ID"):
+        mlflow.set_experiment(experiment_name)
+
     with mlflow.start_run():
         mlflow.set_tag("mlflow.runName", "register-models")
         summary = register_models(experiment_name)
+
     logger.info(f"Model Registry:\n{summary.to_string(index=False)}")
 
 
