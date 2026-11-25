@@ -10,6 +10,7 @@ from mibici.modeling.registry import (
     improves,
     latest_training_children,
     register_models,
+    should_promote,
 )
 
 P1_MODEL = "mibici-p1-departures"
@@ -48,6 +49,60 @@ def test_improves_respects_metric_direction():
     assert not improves(0.4, 0.5, higher_is_better=True)
 
 
+def test_should_promote_respects_experiment_provenance():
+    """Un empate favorece al experimento oficial, nunca una métrica peor."""
+
+    # A genuine improvement always wins.
+    assert should_promote(0.8, 1.0, False, "1", "0", "1")
+
+    # Equal metric: official experiment replaces external provenance.
+    assert should_promote(1.0, 1.0, False, "1", "0", "1")
+
+    # Equal metric: do not replace an existing official champion.
+    assert not should_promote(1.0, 1.0, False, "1", "1", "1")
+
+    # Equal metric: do not promote a model from another experiment.
+    assert not should_promote(1.0, 1.0, False, "0", "1", "1")
+
+    # A worse metric never wins, even with official provenance.
+    assert not should_promote(1.2, 1.0, False, "1", "0", "1")
+
+
+def test_equal_metric_promotes_official_experiment_provenance(tracking_store, monkeypatch):
+    """Un empate promueve la versión del experimento oficial del proyecto."""
+    client, target_experiment_id = tracking_store
+
+    # Allow explicit experiment selection instead of inheriting
+    # the MLFLOW_EXPERIMENT_ID set by the test fixture.
+    monkeypatch.delenv("MLFLOW_EXPERIMENT_ID", raising=False)
+
+    # First register a model from an external experiment.
+    mlflow.set_experiment("Default")
+    old_run = p1_training(dummy_mae=2.0, candidate_mae=1.0)
+
+    register_models("Default")
+
+    old_champion = client.get_model_version_by_alias(P1_MODEL, CHAMPION_ALIAS)
+
+    assert old_champion.run_id == old_run["hist_gradient_boosting_poisson"]
+
+    # Train the same model with exactly the same metric
+    # in the official project experiment.
+    mlflow.set_experiment("test")
+    new_run = p1_training(dummy_mae=2.0, candidate_mae=1.0)
+
+    summary = register_models("test").set_index("model")
+
+    new_champion = client.get_model_version_by_alias(P1_MODEL, CHAMPION_ALIAS)
+
+    assert summary.loc[P1_MODEL, "status"] == "nuevo champion"
+    assert new_champion.run_id == new_run["hist_gradient_boosting_poisson"]
+    assert new_champion.version != old_champion.version
+
+    champion_run = client.get_run(new_champion.run_id)
+    assert champion_run.info.experiment_id == target_experiment_id
+
+
 def test_best_run_uses_latest_training_and_objective(tracking_store):
     """El mejor run sale del último entrenamiento y del objetivo de cada modelo."""
     _, experiment_id = tracking_store
@@ -56,8 +111,14 @@ def test_best_run_uses_latest_training_and_objective(tracking_store):
     p2 = log_training(
         "P2",
         {
-            "bike": {"tags": {"objective": "bike_pressure"}, "metrics": {"val_average_precision": 0.3}},
-            "dock": {"tags": {"objective": "dock_pressure"}, "metrics": {"val_average_precision": 0.9}},
+            "bike": {
+                "tags": {"objective": "bike_pressure"},
+                "metrics": {"val_average_precision": 0.3},
+            },
+            "dock": {
+                "tags": {"objective": "dock_pressure"},
+                "metrics": {"val_average_precision": 0.9},
+            },
         },
     )
     specs = {spec.name: spec for spec in REGISTERED_MODELS}

@@ -14,6 +14,7 @@ from mibici.modeling.mlflow_runs import (
     P1_RUN_NAMES,
     ActivityQuantileModel,
     calculate_data_version,
+    log_selection,
     p2_run_name,
     parse_search_grid,
     precision_recall_table,
@@ -21,6 +22,7 @@ from mibici.modeling.mlflow_runs import (
     run_p2,
     run_p3,
     search_suffix,
+    selection_summary,
 )
 from mibici.modeling.train import (
     evaluate_candidate,
@@ -375,7 +377,9 @@ def test_run_p2_search_logs_candidates_for_each_objective(
     parent, children = children_of(client, experiment_id, "P2-search")
     objectives = ("bike-pressure", "dock-pressure")
     candidates = {
-        f"P2-{objective}-search-lr{rate}-leaf15" for objective in objectives for rate in (0.05, 0.2)
+        f"P2-{objective}-search-lr{rate}-leaf15"
+        for objective in objectives
+        for rate in (0.05, 0.2)
     }
     baselines = {f"P2-{objective}-dummy-prior" for objective in objectives}
     assert set(children) == candidates | baselines
@@ -397,3 +401,68 @@ def test_run_p2_search_logs_candidates_for_each_objective(
                 "evaluation/precision_recall.csv",
             },
         )
+
+
+def test_selection_summary_handles_zero_baseline():
+    """El porcentaje queda indefinido cuando el baseline es cero."""
+    table = pd.DataFrame(
+        [
+            {"run_name": "baseline", "stage": "baseline", "mae": 0.0},
+            {"run_name": "candidate", "stage": "search", "mae": 0.5},
+        ]
+    )
+
+    summary = selection_summary(table, "mae", higher_is_better=True)
+
+    assert summary["improvement"] == pytest.approx(0.5)
+    assert summary["improvement_pct"] is None
+    assert summary["best_baseline"]["value"] == 0.0
+    assert summary["best_candidate"]["value"] == 0.5
+
+
+def test_selection_summary_calculates_percentage_improvement():
+    """El porcentaje usa el valor absoluto del baseline."""
+    table = pd.DataFrame(
+        [
+            {"run_name": "baseline", "stage": "baseline", "mae": 0.5},
+            {"run_name": "candidate", "stage": "search", "mae": 0.25},
+        ]
+    )
+
+    summary = selection_summary(table, "mae", higher_is_better=False)
+
+    assert summary["improvement"] == pytest.approx(0.25)
+    assert summary["improvement_pct"] == pytest.approx(50.0)
+
+
+def test_log_selection_skips_undefined_percentage(tracking_store):
+    """No registrar porcentajes indefinidos como métricas de MLflow."""
+    client, experiment_id = tracking_store
+
+    summaries = {
+        "zero_baseline": {
+            "best_candidate": {"run_name": "candidate-zero"},
+            "improvement_pct": None,
+        },
+        "normal_baseline": {
+            "best_candidate": {"run_name": "candidate-normal"},
+            "improvement_pct": 50.0,
+        },
+    }
+
+    with mlflow.start_run() as run:
+        log_selection(summaries)
+        run_id = run.info.run_id
+
+    logged_run = client.get_run(run_id)
+
+    assert logged_run.data.tags["selected_run_zero_baseline"] == "candidate-zero"
+    assert logged_run.data.tags["selected_run_normal_baseline"] == "candidate-normal"
+
+    assert "normal_baseline_improvement_pct" in logged_run.data.metrics
+    assert logged_run.data.metrics["normal_baseline_improvement_pct"] == 50.0
+
+    assert "zero_baseline_improvement_pct" not in logged_run.data.metrics
+
+    artifacts = client.list_artifacts(run_id, "reports")
+    assert "reports/selection_summary.json" in {artifact.path for artifact in artifacts}

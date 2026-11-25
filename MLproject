@@ -69,7 +69,7 @@ entry_points:
   # Model Registry: registra el mejor modelo del último entrenamiento de cada
   # pregunta y mueve el alias "champion" solo si mejora su métrica de validación.
   register:
-    command: "python -m mibici.modeling.registry"
+    command: "python -m mibici.modeling.registry main"
 
   # Evaluación final en test de los champion de P1 y P2 (sin reentrenar ni seleccionar).
   evaluate:
