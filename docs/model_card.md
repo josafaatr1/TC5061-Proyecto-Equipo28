@@ -136,7 +136,17 @@ Resumen del [análisis FinOps](../reports/finops/finops_report.md), basado en la
 
 ## 10. Reproducción
 
-Desde la raíz del repositorio, con los Parquets procesados y el catálogo de septiembre de 2026:
+**Registrar el `champion` correcto.** `register` solo compara los hijos del entrenamiento más reciente de cada pregunta. Si el último entrenamiento fue `train`, `p2_train` o `workflow`, registra la configuración por defecto (`learning_rate=0.1`, `max_leaf_nodes=31`, AP de validación 0.3177 en bicicletas y 0.3795 en anclajes), que no es el modelo de esta ficha. Para reproducir el `champion` descrito aquí, la búsqueda debe ser el último entrenamiento antes de registrar:
+
+```bash
+mlflow run . -e search -P question=p1 --env-manager local
+mlflow run . -e search -P question=p2 --env-manager local
+mlflow run . -e register --env-manager local
+```
+
+Después, en la pestaña **Models** de MLflow, verificar que la versión con alias `champion` tenga `learning_rate=0.2` y `max_leaf_nodes=63`, y `val_average_precision` de 0.3242 (bicicletas) y 0.3882 (anclajes). Los run IDs serán distintos a los de la sección 5, porque MLflow genera un ID nuevo en cada ejecución; las métricas sí deben coincidir, ya que la semilla está fija.
+
+Con ese `champion` registrado, los Parquets procesados y el catálogo de septiembre de 2026, desde la raíz del repositorio:
 
 ```bash
 mlflow run . -e evaluate --env-manager local                                         # evaluación en test
