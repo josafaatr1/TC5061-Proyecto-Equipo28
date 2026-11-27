@@ -1,0 +1,5 @@
+users,spawn_rate,requested_duration_s,requests_final_console,requests_csv,request_failures_final,runner_exceptions_csv,csv_shutdown_error,exit_code,rps_csv,mean_ms_csv,p95_ms,p99_ms,cpu_avg_pct,cpu_max_pct,ram_avg_mib,ram_max_mib,samples,window_start_utc,window_end_utc_exclusive
+1,1,60,37,37,0,0,false,0,0.637,10.464,21,36,0.71,1.95,224.60,224.9,24,2026-11-26T01:48:57Z,2026-11-26T01:49:57Z
+5,5,60,189,186,0,0,true,0,3.304,15.668,30,180,3.79,33.11,224.92,225.4,23,2026-11-26T01:50:02Z,2026-11-26T01:50:59Z
+10,10,60,385,379,0,0,true,0,6.603,18.957,42,260,5.77,10.79,225.27,225.9,23,2026-11-26T01:51:03Z,2026-11-26T01:52:02Z
+20,20,60,757,757,0,0,false,0,13.183,37.295,64,820,11.94,19.36,225.74,226.7,24,2026-11-26T01:52:07Z,2026-11-26T01:53:06Z

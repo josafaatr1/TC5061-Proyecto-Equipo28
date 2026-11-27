@@ -40,5 +40,9 @@ jobs:
       - name: Check code quality
         run: ruff check
 
-      - name: Build Docker image
+      - name: Validate Docker Compose configuration
+        run: docker compose config --quiet
+
+      # The Git checkout does not include the private model exports.
+      - name: Build Docker image (without Registry artifacts)
         run: docker build -t mibici-api -f Containerfile .

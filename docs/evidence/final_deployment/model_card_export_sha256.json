@@ -1,0 +1,37 @@
+{
+  "models": [
+    {
+      "alias": "champion",
+      "path": "p2-bike-pressure",
+      "registered_model": "mibici-p2-bike-pressure",
+      "run_id": "d306fe5f7f34496a94f8cc3d0db2f62b",
+      "version": "1"
+    },
+    {
+      "alias": "champion",
+      "path": "p2-dock-pressure",
+      "registered_model": "mibici-p2-dock-pressure",
+      "run_id": "81f93c6f160e4f44afe3db913eac5030",
+      "version": "1"
+    }
+  ],
+  "sha256": {
+    "metadata.json": "e690ff7b5ac880e15de8b5801c254447d8d24aa9dfbe142952a28998b8b9f04d",
+    "p2-bike-pressure/MLmodel": "f0fbf7680a26c032a5227bba909d43b4ee6c699baa45b0bac1330ab9006257e6",
+    "p2-bike-pressure/conda.yaml": "85f43b7029548e19271c6e03b9a4f71e92ec3357b126080b0bbcb3e1ed20726f",
+    "p2-bike-pressure/input_example.json": "f1176233c4637445d13387e667463555a9f6675aac4acd700efd9799b1cffdba",
+    "p2-bike-pressure/model.skops": "75a58c9c561df13b6a36234ed52acd47f5ec3b993b28e8f98d259e0641b93674",
+    "p2-bike-pressure/python_env.yaml": "e60930b43b47f01fac03a2d756b662a34324dc0b568d3a7d5c86f5f7b1483e9a",
+    "p2-bike-pressure/registered_model_meta": "3f3b7af36b7485421a5c145c18520463d4e530724f6974060609dc02f6c5c984",
+    "p2-bike-pressure/requirements.txt": "efb53a537394213daf421ac364e4168680c8921052365f5fb8b41e15189f555d",
+    "p2-bike-pressure/serving_input_example.json": "26f9cf0c4432e5f9bccf37a620cc75259d45a5c066dfbfc8e41410c4c749057f",
+    "p2-dock-pressure/MLmodel": "bb6eba1602c01f6a3bfbcb930cdcbe4c583f89241b43be8e7184dd88bfdd46c9",
+    "p2-dock-pressure/conda.yaml": "85f43b7029548e19271c6e03b9a4f71e92ec3357b126080b0bbcb3e1ed20726f",
+    "p2-dock-pressure/input_example.json": "f1176233c4637445d13387e667463555a9f6675aac4acd700efd9799b1cffdba",
+    "p2-dock-pressure/model.skops": "55a5dfea750767dbdaf4e70240430daf9fa014c0ac5ac24ad7b206bb98fceacd",
+    "p2-dock-pressure/python_env.yaml": "e60930b43b47f01fac03a2d756b662a34324dc0b568d3a7d5c86f5f7b1483e9a",
+    "p2-dock-pressure/registered_model_meta": "97bb99c134071531f5fbb32c53455abdf9986a72d3717dd507acccd32b8ec661",
+    "p2-dock-pressure/requirements.txt": "efb53a537394213daf421ac364e4168680c8921052365f5fb8b41e15189f555d",
+    "p2-dock-pressure/serving_input_example.json": "26f9cf0c4432e5f9bccf37a620cc75259d45a5c066dfbfc8e41410c4c749057f"
+  }
+}
