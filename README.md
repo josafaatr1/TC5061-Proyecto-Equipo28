@@ -841,6 +841,8 @@ La comparación retrospectiva entre el champion y otra variante HGB, sus limitac
 
 ## 16. Operación del sistema (Entregable 7)
 
+La [validación de despliegue y operación para la entrega final](docs/final_deployment_operations.md) identifica los dos `champion` P2 del [Model Card](docs/model_card.md) y muestra cómo verificar los artefactos antes del build. En el proyecto aislado, FastAPI y MLflow quedaron `healthy`; Locust registró [1135 solicitudes y cero fallos](docs/evidence/final_deployment/model_card_validation.md#carga-y-exportación). La [guía de la demo](docs/final_deployment_handoff.md) separa esta comprobación local del run de GitHub Actions en `main`.
+
 La API contenerizada (sección 14) y los modelos registrados en MLflow (sección 7) se integran en un sistema que se levanta con un solo comando, se prueba y construye automáticamente en cada cambio, y se analiza bajo carga y desde la perspectiva de costo.
 
 | Componente | Archivos | Integrante | Pull Request |

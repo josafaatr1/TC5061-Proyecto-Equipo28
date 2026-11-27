@@ -285,12 +285,64 @@ def test_live_container_http_contract(payload):
         assert result.decision_threshold == 0.5
     with urlopen(f"{base_url}/openapi.json", timeout=30) as response:
         assert "/predict" in json.load(response)["paths"]
+    with urlopen(f"{base_url}/docs", timeout=30) as response:
+        assert response.status == 200
+        assert response.headers.get_content_type() == "text/html"
     for changed in ({"hour_of_day": 24}, {"unknown": 1}, {"net_flow_lag_1h": float("nan")}):
         request.data = json.dumps({**payload, **changed}).encode()
         with pytest.raises(HTTPError) as error:
             urlopen(request, timeout=30)
         assert error.value.code == 422
         assert json.load(error.value)["detail"]
+
+
+@pytest.mark.skipif(
+    os.getenv("MIBICI_API_CONTAINER") != "1" or not os.getenv("MIBICI_API_MODELS_DIR"),
+    reason="Requires the running container and an explicit path to the verified model export",
+)
+def test_live_container_matches_packaged_export(payload):
+    base_url = os.environ.get("MIBICI_API_URL", "http://127.0.0.1:8000").rstrip("/")
+    root = Path(os.environ["MIBICI_API_MODELS_DIR"])
+    example = Path(__file__).resolve().parents[2] / "docs" / "examples" / "p2-request.json"
+    samples = [
+        json.loads(example.read_text(encoding="utf-8")),
+        {**payload, "hour_of_day": 0, "month": 1, **dict.fromkeys(PREDICTOR_COLUMNS[4:], 0.0)},
+        {
+            **payload,
+            "hour_of_day": 23,
+            "day_of_week": 6,
+            "is_weekend": True,
+            "departures_lag_1h": 23.0,
+            "net_flow_lag_1h": -12.0,
+        },
+    ]
+    local_models = {
+        key: mlflow.sklearn.load_model(str(root / f"p2-{key}-pressure"))
+        for key in ("bike", "dock")
+    }
+    for sample in samples:
+        request = Request(
+            f"{base_url}/predict",
+            data=json.dumps(sample).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=30) as response:
+            assert response.status == 200
+            result = main.PredictionResponse.model_validate_json(response.read())
+        assert result.decision_threshold == main.DECISION_THRESHOLD
+        for key, model in local_models.items():
+            if hasattr(model, "feature_names_in_"):
+                assert tuple(model.feature_names_in_) == tuple(PREDICTOR_COLUMNS)
+                features = pd.DataFrame([sample], columns=PREDICTOR_COLUMNS)
+            else:
+                features = np.array([[sample[c] for c in PREDICTOR_COLUMNS]], dtype=np.float32)
+            positive = list(model.classes_).index(1)
+            expected = float(model.predict_proba(features)[0, positive])
+            actual = getattr(result.predictions, key)
+            assert actual.prediction == int(model.predict(features)[0])
+            # Allow only rounding noise between Windows and Linux.
+            assert actual.probability == pytest.approx(expected, rel=0, abs=1e-9)
 
 
 @pytest.mark.skipif(
