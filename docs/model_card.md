@@ -136,23 +136,36 @@ Resumen del [análisis FinOps](../reports/finops/finops_report.md), basado en la
 
 ## 10. Reproducción
 
-**Registrar el `champion` correcto.** `register` solo compara los hijos del entrenamiento más reciente de cada pregunta. Si el último entrenamiento fue `train`, `p2_train` o `workflow`, registra la configuración por defecto (`learning_rate=0.1`, `max_leaf_nodes=31`, AP de validación 0.3177 en bicicletas y 0.3795 en anclajes), que no es el modelo de esta ficha. Para reproducir el `champion` descrito aquí, la búsqueda debe ser el último entrenamiento antes de registrar:
+Los modelos de esta ficha se entrenaron con el catálogo de septiembre de 2026 (`nomenclatura_2026_09.csv`). En `main`, el catálogo predeterminado de `mibici/modeling/p2_catalog.py` es el de octubre (`nomenclatura_2026_10.csv`) y los entry points `search`, `p2_train` y `evaluate` no permiten cambiarlo: con él, la verificación de etiquetas falla o, si se reconstruyen, cambian las etiquetas y las métricas. Por eso los pasos de P2 y la evaluación llaman a las funciones de Python con `catalog_path` explícito.
+
+**1. Entrenar y registrar el `champion`.** `register` solo compara los hijos del entrenamiento más reciente de cada pregunta. Si el último entrenamiento fue `train`, `p2_train` o `workflow`, registra la configuración por defecto (`learning_rate=0.1`, `max_leaf_nodes=31`, AP de validación 0.3177 en bicicletas y 0.3795 en anclajes), que no es el modelo de esta ficha. La búsqueda debe ser el último entrenamiento antes de registrar:
 
 ```bash
-mlflow run . -e search -P question=p1 --env-manager local
-mlflow run . -e search -P question=p2 --env-manager local
+export MLFLOW_TRACKING_URI=http://127.0.0.1:5000 MLFLOW_EXPERIMENT_NAME=mibici-equipo28
+python - <<'PY'
+from pathlib import Path
+from mibici.modeling.mlflow_runs import parse_search_grid, run_p1, run_p2, run_p3
+
+catalog = Path("data/external/nomenclatura_2026_09.csv")
+grid = parse_search_grid("0.05,0.1,0.2", "15,31,63")
+run_p1(search_grid=grid)                       # búsqueda P1 (no usa el catálogo)
+run_p2(search_grid=grid, catalog_path=catalog)  # búsqueda P2 con el catálogo de septiembre
+run_p3(catalog_path=catalog)                   # clustering P3
+PY
 mlflow run . -e register --env-manager local
 ```
 
-Después, en la pestaña **Models** de MLflow, verificar que la versión con alias `champion` tenga `learning_rate=0.2` y `max_leaf_nodes=63`, y `val_average_precision` de 0.3242 (bicicletas) y 0.3882 (anclajes). Los run IDs serán distintos a los de la sección 5, porque MLflow genera un ID nuevo en cada ejecución; las métricas sí deben coincidir, ya que la semilla está fija.
+Después, en la pestaña **Models** de MLflow, verificar que la versión con alias `champion` de cada modelo P2 tenga `learning_rate=0.2` y `max_leaf_nodes=63`, y `val_average_precision` de 0.3242 (bicicletas) y 0.3882 (anclajes). Los run IDs serán distintos a los de la sección 5, porque MLflow genera un ID nuevo en cada ejecución; las métricas sí deben coincidir, ya que la semilla está fija.
 
-Con ese `champion` registrado, los Parquets procesados y el catálogo de septiembre de 2026, desde la raíz del repositorio:
+**2. Evaluar, monitorear y estimar costos.** Con ese `champion` registrado y los Parquets procesados, desde la raíz del repositorio:
 
 ```bash
-mlflow run . -e evaluate --env-manager local                                         # evaluación en test
+python -c "from pathlib import Path; from mibici.modeling.evaluate import run_evaluation; run_evaluation(catalog_path=Path('data/external/nomenclatura_2026_09.csv'))"  # evaluación en test
 python -m mibici.monitoring.drift_report --catalog-path data/external/nomenclatura_2026_09.csv  # drift
-python -m mibici.modeling.retrain_p2_bike compare --version 2                         # comparación v1/v2
-python -m mibici.finops                                                              # FinOps
+python -m mibici.modeling.retrain_p2_bike compare --version 2  # comparación v1/v2
+python -m mibici.finops                                       # FinOps
 ```
 
-La evaluación y la comparación de versiones requieren el servidor MLflow con los modelos registrados y sus artefactos. Pruebas del monitoreo, FinOps y modelado: `pytest tests/monitoring tests/test_finops.py tests/modeling` (108 aprobadas el 2026-11-26).
+Estos pasos se verificaron el 2026-11-26 en un servidor MLflow nuevo. Los cuatro modelos quedaron como v1 `champion`, con las mismas métricas de validación (P1 MAE 0.8596; P2 AP 0.3242 y 0.3882; P3 `kmeans_k2`, silhouette 0.4141), y la evaluación reprodujo exactamente las métricas y matrices de confusión de test de la sección 4.
+
+La comparación de versiones requiere además la v2 de bicicletas (`python -m mibici.modeling.retrain_p2_bike train`). `retrain_p2_bike` ya usa el catálogo de septiembre por defecto. Pruebas del monitoreo, FinOps y modelado: `pytest tests/monitoring tests/test_finops.py tests/modeling` (108 aprobadas el 2026-11-26).
