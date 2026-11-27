@@ -537,6 +537,8 @@ El despliegue REST se describe en la sección 14; la auditoría y los resultados
 
 La operación del sistema (Entregable 7) se describe en la sección 16, con tres documentos de detalle: la [guía de Docker Compose](docs/compose_operations.md), las [pruebas de carga y capacidad](tests/load/README.md) y el [análisis FinOps](reports/finops/finops_report.md).
 
+El monitoreo, la comparación de versiones y la gobernanza del modelo desplegado se resumen en la sección 17 y en el [Model Card](docs/model_card.md).
+
 
 ## 12. Estado del proyecto
 
@@ -1040,3 +1042,25 @@ Supuestos y limitaciones: las capacidades se midieron en una laptop (Docker Desk
 ### 16.6. Reporte
 
 El reporte en PDF del Entregable 7, `TC5061_Operacion_FinOps_Equipo28.pdf`, con las gráficas de Locust y el análisis FinOps, se entrega en Canvas.
+
+## 17. Monitoreo, gobernanza y FinOps (entrega final)
+
+Esta sección reúne la evidencia de monitoreo y documentación responsable del modelo desplegado (P2). El documento central es el [Model Card](docs/model_card.md), que resume uso previsto, datos, evaluación, linaje, monitoreo, costos y limitaciones con enlaces a cada fuente.
+
+| Elemento | Evidencia | Resultado principal |
+|---|---|---|
+| Reporte de drift (Evidently) | [Interpretación](docs/drift_interpretation.md), [HTML](reports/evidently/data_drift_report.html), [JSON](reports/evidently/drift_summary.json) | Drift en 3 de 17 variables: `month` (estacionalidad) y la prevalencia de ambas etiquetas; ninguna variable de flujo cambia de forma significativa |
+| A/B testing entre versiones | [Resumen](docs/ab_testing_summary.md), [CSV](reports/ab_testing/p2_bike_registered_comparison.csv) | v2 de bicicletas mejora AP +5.7 % y recall +2.2 %, pero agrega 3,294 falsos positivos; v1 sigue como `champion` |
+| Análisis FinOps | [Reporte](reports/finops/finops_report.md), sección 16.5 | $31.90 USD/mes con el Compose actual; −66.4 % separando MLflow, usando Graviton y apagando en horas sin servicio |
+| Model Card | [docs/model_card.md](docs/model_card.md) | Uso previsto (priorizar revisiones, no alarma automática), limitaciones de las etiquetas proxy y gobernanza |
+| Continuous Training | [Recomendación](docs/continuous_training_recommendation.md) | Criterios de disparo propuestos; reentrenamiento y promoción con aprobación humana, no automatizados |
+
+Para regenerar y verificar la evidencia desde la raíz del repositorio (requiere los Parquets procesados y el catálogo de septiembre de 2026, sección 15.2):
+
+```bash
+python -m mibici.monitoring.drift_report --catalog-path data/external/nomenclatura_2026_09.csv
+python -m mibici.finops
+pytest tests/monitoring tests/test_finops.py tests/modeling
+```
+
+El 2026-11-26 ambos comandos reprodujeron los resultados versionados (`drift_summary.json` y el reporte FinOps idénticos; los HTML de Evidently solo cambian sus identificadores internos) y las 108 pruebas pasaron. La comparación de versiones (`python -m mibici.modeling.retrain_p2_bike compare --version 2`) requiere además el servidor MLflow con los artefactos de los runs indicados en el Model Card.
